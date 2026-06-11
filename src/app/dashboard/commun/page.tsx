@@ -31,7 +31,7 @@ import {
   resolveColor,
 } from "@/lib/utils";
 import type { Profile, Subscription, Transaction } from "@/types";
-import { KpiCard } from "@/app/dashboard/page";
+import { KpiCard } from "@/components/shared/KpiCard";
 
 function DashboardCommunContent() {
   const { profile, partner, categories, currentMonth, dataVersion, ready } =
