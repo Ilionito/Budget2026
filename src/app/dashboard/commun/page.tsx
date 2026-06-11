@@ -150,6 +150,27 @@ function DashboardCommunContent() {
   );
   const withinBudget = totalSpend <= totalPlanned;
 
+  // Budget prévu par catégorie (même logique que totalPlanned, mais cumulé
+  // dans une Map indexée par category_id) pour le détail « Par catégorie ».
+  const plannedByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of lines) {
+      const override = overrides.find((o) => o.budget_line_id === line.id);
+      const amount = override
+        ? Number(override.amount_target)
+        : lineAppliesToMonth(
+            line.recurrence,
+            line.start_date ?? line.created_at,
+            month,
+            year
+          )
+        ? Number(line.amount_target)
+        : 0;
+      map.set(line.category_id, (map.get(line.category_id) ?? 0) + amount);
+    }
+    return map;
+  }, [lines, overrides, month, year]);
+
   // Ordre figé : Ophélie puis Joris, comme sur le budget commun.
   const people = useMemo(() => {
     const all = [profile, partner].filter((p): p is Profile => p !== null);
@@ -348,7 +369,7 @@ function DashboardCommunContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={commonTx} categoryIds={commonCategoryIds} />
+        <CategoryBreakdown transactions={commonTx} categoryIds={commonCategoryIds} plannedByCategory={plannedByCategory} />
         </div>
 
         {/* Rail droit : répartition, dernières transactions */}

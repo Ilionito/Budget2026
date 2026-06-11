@@ -28,10 +28,17 @@ import {
   formatCurrency,
   formatMonth,
   getMonthRange,
+  lineAppliesToMonth,
   monthlyEquivalent,
   resolveColor,
 } from "@/lib/utils";
-import type { MonthlyIncome, Subscription, Transaction } from "@/types";
+import type {
+  BudgetLine,
+  BudgetLineOverride,
+  MonthlyIncome,
+  Subscription,
+  Transaction,
+} from "@/types";
 import { KpiCard } from "@/components/shared/KpiCard";
 
 function DashboardContent() {
@@ -47,11 +54,11 @@ function DashboardContent() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [income, setIncome] = useState<MonthlyIncome | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  // Catégories du budget commun : servent à distinguer une dépense partagée
-  // d'une dépense purement perso (du partenaire) à exclure du dashboard.
-  const [commonCategoryIds, setCommonCategoryIds] = useState<Set<string>>(
-    new Set()
-  );
+  // Lignes du budget (commun + perso de l'utilisateur) + ajustements du mois,
+  // pour calculer le budget prévu et distinguer une dépense partagée d'une
+  // dépense purement perso (du partenaire) à exclure du dashboard.
+  const [lines, setLines] = useState<BudgetLine[]>([]);
+  const [overrides, setOverrides] = useState<BudgetLineOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const loadIdRef = useRef(0);
 
@@ -62,35 +69,41 @@ function DashboardContent() {
       if (!silent) setLoading(true);
       const userId = profile.id;
       const { start, end } = getMonthRange(currentMonth);
-      const [txRes, incomeRes, subsRes, commonLinesRes] = await Promise.all([
-        supabase
-          .from("transactions")
-          .select("*")
-          .gte("date", start)
-          .lte("date", end)
-          .order("date", { ascending: false }),
-        supabase
-          .from("monthly_income")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("month", currentMonth.getMonth() + 1)
-          .eq("year", currentMonth.getFullYear())
-          .maybeSingle(),
-        supabase.from("subscriptions").select("*").eq("is_active", true),
-        supabase.from("budget_lines").select("category_id").is("owner_id", null),
-      ]);
+      const m = currentMonth.getMonth() + 1;
+      const y = currentMonth.getFullYear();
+      const [txRes, incomeRes, subsRes, linesRes, overridesRes] =
+        await Promise.all([
+          supabase
+            .from("transactions")
+            .select("*")
+            .gte("date", start)
+            .lte("date", end)
+            .order("date", { ascending: false }),
+          supabase
+            .from("monthly_income")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("month", m)
+            .eq("year", y)
+            .maybeSingle(),
+          supabase.from("subscriptions").select("*").eq("is_active", true),
+          supabase
+            .from("budget_lines")
+            .select("*")
+            .or(`owner_id.is.null,owner_id.eq.${userId}`),
+          supabase
+            .from("budget_line_overrides")
+            .select("*")
+            .eq("month", m)
+            .eq("year", y),
+        ]);
       // Ignore le résultat si une requête plus récente a été lancée entre-temps.
       if (id !== loadIdRef.current) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
       setIncome((incomeRes.data as MonthlyIncome | null) ?? null);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
-      setCommonCategoryIds(
-        new Set(
-          ((commonLinesRes.data as { category_id: string }[] | null) ?? [])
-            .map((l) => l.category_id)
-            .filter(Boolean)
-        )
-      );
+      setLines((linesRes.data as BudgetLine[] | null) ?? []);
+      setOverrides((overridesRes.data as BudgetLineOverride[] | null) ?? []);
       setLoading(false);
     },
     [ready, profile, currentMonth]
@@ -117,6 +130,49 @@ function DashboardContent() {
   }, [ready, profile, load]);
 
   const me = profile?.id;
+  const month = currentMonth.getMonth() + 1;
+  const year = currentMonth.getFullYear();
+
+  // Catégories du budget commun : servent à distinguer une dépense partagée
+  // d'une dépense purement perso (du partenaire) à exclure du dashboard.
+  const commonCategoryIds = useMemo(
+    () =>
+      new Set(
+        lines
+          .filter((l) => l.owner_id == null)
+          .map((l) => l.category_id)
+          .filter(Boolean)
+      ),
+    [lines]
+  );
+
+  // Budget prévu par catégorie (commun + perso) : pour chaque ligne,
+  // l'ajustement du mois s'il existe, sinon le montant prévu les mois où la
+  // récurrence s'applique, cumulé par category_id.
+  const plannedByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of lines) {
+      const override = overrides.find((o) => o.budget_line_id === line.id);
+      const amount = override
+        ? Number(override.amount_target)
+        : lineAppliesToMonth(
+            line.recurrence,
+            line.start_date ?? line.created_at,
+            month,
+            year
+          )
+        ? Number(line.amount_target)
+        : 0;
+      map.set(line.category_id, (map.get(line.category_id) ?? 0) + amount);
+    }
+    return map;
+  }, [lines, overrides, month, year]);
+
+  const totalPlanned = useMemo(
+    () => Array.from(plannedByCategory.values()).reduce((s, v) => s + v, 0),
+    [plannedByCategory]
+  );
+
   // Vue personnelle : budget commun (partagé, peu importe qui paie) + MES
   // dépenses. On exclut les dépenses purement perso du partenaire.
   const relevant = useMemo(
@@ -128,6 +184,9 @@ function DashboardContent() {
       ),
     [transactions, commonCategoryIds, me]
   );
+
+  const relevantSpent = relevant.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const withinBudget = relevantSpent <= totalPlanned;
 
   const mySpend = transactions
     .filter((tx) => tx.user_id === me)
@@ -198,8 +257,8 @@ function DashboardContent() {
     return (
       <div className="space-y-4">
         <PageHeader title="Dashboard" subtitle={formatMonth(currentMonth)} />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-          {[0, 1, 2, 3].map((i) => (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
+          {[0, 1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
           ))}
         </div>
@@ -219,7 +278,34 @@ function DashboardContent() {
         subtitle={`Vue d’ensemble · ${formatMonth(currentMonth)}`}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
+        <KpiCard
+          label="Dépensé / budget"
+          value={
+            totalPlanned > 0 ? (
+              <>
+                {formatCurrency(relevantSpent)}
+                <span className="text-zinc-300">
+                  {" "}
+                  / {formatCurrency(totalPlanned)}
+                </span>
+              </>
+            ) : (
+              formatCurrency(relevantSpent)
+            )
+          }
+          sub={
+            totalPlanned === 0
+              ? "Aucun budget défini"
+              : withinBudget
+              ? `${formatCurrency(totalPlanned - relevantSpent)} restants`
+              : `${formatCurrency(relevantSpent - totalPlanned)} de dépassement`
+          }
+          icon={TrendingDown}
+          tone={
+            totalPlanned === 0 ? "indigo" : withinBudget ? "emerald" : "rose"
+          }
+        />
         <KpiCard
           label="Solde restant"
           value={formatCurrency(balance)}
@@ -315,7 +401,7 @@ function DashboardContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={relevant} />
+        <CategoryBreakdown transactions={relevant} plannedByCategory={plannedByCategory} />
         </div>
 
         {/* Rail droit : revenus, répartition, dernières transactions */}

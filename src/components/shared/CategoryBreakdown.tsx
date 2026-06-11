@@ -11,10 +11,13 @@ import type { Transaction } from "@/types";
 export function CategoryBreakdown({
   transactions,
   categoryIds,
+  plannedByCategory,
 }: {
   transactions: Transaction[];
   /** Si fourni, limite l'affichage aux catégories de cet ensemble. */
   categoryIds?: Set<string>;
+  /** Si fourni, affiche « dépensé / budget » par catégorie (id → budget prévu). */
+  plannedByCategory?: Map<string, number>;
 }) {
   const { categories } = useAppStore();
 
@@ -54,6 +57,9 @@ export function CategoryBreakdown({
           {rows.map(({ category, amount }) => {
             const pct = total > 0 ? (amount / total) * 100 : 0;
             const color = resolveColor(category.color);
+            const planned = plannedByCategory?.get(category.id) ?? 0;
+            const hasBudget = plannedByCategory != null && planned > 0;
+            const within = amount <= planned;
             return (
               <div key={category.id} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2 text-sm">
@@ -64,16 +70,38 @@ export function CategoryBreakdown({
                     />
                     <span className="truncate">{category.label}</span>
                   </span>
-                  <span className="shrink-0 tabular-nums text-zinc-400">
-                    {formatCurrency(amount)}{" "}
-                    <span className="text-zinc-600">· {Math.round(pct)} %</span>
-                  </span>
+                  {hasBudget ? (
+                    <span className="shrink-0 tabular-nums">
+                      <span
+                        className={within ? "text-emerald-500" : "text-rose-500"}
+                      >
+                        {formatCurrency(amount)}
+                      </span>
+                      <span className="text-zinc-400">
+                        {" "}
+                        / {formatCurrency(planned)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-zinc-400">
+                      {formatCurrency(amount)}{" "}
+                      <span className="text-zinc-600">· {Math.round(pct)} %</span>
+                    </span>
+                  )}
                 </div>
-                <Progress
-                  value={pct}
-                  className="h-1.5"
-                  indicatorStyle={{ backgroundColor: color }}
-                />
+                {hasBudget ? (
+                  <Progress
+                    value={Math.min(100, (amount / planned) * 100)}
+                    className="h-1.5"
+                    indicatorClassName={within ? "bg-emerald-500" : "bg-rose-500"}
+                  />
+                ) : (
+                  <Progress
+                    value={pct}
+                    className="h-1.5"
+                    indicatorStyle={{ backgroundColor: color }}
+                  />
+                )}
               </div>
             );
           })}

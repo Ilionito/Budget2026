@@ -86,6 +86,7 @@ export interface BudgetLine {
   amount_target: number;
   recurrence: Recurrence;
   start_date: string | null;
+  owner_id: string | null;
   created_by: string;
   created_at: string;
   category?: Category;
