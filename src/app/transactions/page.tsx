@@ -184,11 +184,7 @@ function TransactionsContent() {
                   key={tx.id}
                   transaction={tx}
                   onEdit={() => handleEdit(tx)}
-                  onDelete={
-                    tx.user_id === profile?.id
-                      ? () => handleDelete(tx)
-                      : undefined
-                  }
+                  onDelete={() => handleDelete(tx)}
                 />
               ))}
             </Card>
