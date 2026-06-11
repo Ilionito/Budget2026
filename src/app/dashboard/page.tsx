@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDaysInMonth, isSameMonth, parseISO } from "date-fns";
-import { Repeat, TrendingDown, Users, Wallet } from "lucide-react";
+import { Repeat, TrendingDown, Wallet } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -42,15 +42,8 @@ import type {
 import { KpiCard } from "@/components/shared/KpiCard";
 
 function DashboardContent() {
-  const {
-    profile,
-    partner,
-    categories,
-    currentMonth,
-    dataVersion,
-    ready,
-    bumpDataVersion,
-  } = useAppStore();
+  const { profile, categories, currentMonth, dataVersion, ready, bumpDataVersion } =
+    useAppStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [income, setIncome] = useState<MonthlyIncome | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -133,19 +126,6 @@ function DashboardContent() {
   const month = currentMonth.getMonth() + 1;
   const year = currentMonth.getFullYear();
 
-  // Catégories du budget commun : servent à distinguer une dépense partagée
-  // d'une dépense purement perso (du partenaire) à exclure du dashboard.
-  const commonCategoryIds = useMemo(
-    () =>
-      new Set(
-        lines
-          .filter((l) => l.owner_id == null)
-          .map((l) => l.category_id)
-          .filter(Boolean)
-      ),
-    [lines]
-  );
-
   // Budget prévu par catégorie (commun + perso) : pour chaque ligne,
   // l'ajustement du mois s'il existe, sinon le montant prévu les mois où la
   // récurrence s'applique, cumulé par category_id.
@@ -199,18 +179,6 @@ function DashboardContent() {
     .filter((tx) => tx.user_id === me)
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
   const myCount = transactions.filter((tx) => tx.user_id === me).length;
-  // Part du partenaire SUR LE BUDGET COMMUN uniquement (pas ses dépenses perso).
-  const partnerCommon = transactions.filter(
-    (tx) =>
-      tx.user_id !== me &&
-      tx.category_id &&
-      commonCategoryIds.has(tx.category_id)
-  );
-  const partnerSpend = partnerCommon.reduce(
-    (sum, tx) => sum + Number(tx.amount),
-    0
-  );
-  const partnerCount = partnerCommon.length;
   const net = income ? Number(income.net_transferred) : 0;
   const balance = net - mySpend;
   // Vue personnelle : MES abonnements (chacun saisit sa propre part d'un
@@ -264,8 +232,8 @@ function DashboardContent() {
     return (
       <div className="space-y-4">
         <PageHeader title="Dashboard" subtitle={formatMonth(currentMonth)} />
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 lg:gap-4">
-          {[0, 1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
           ))}
         </div>
@@ -330,13 +298,6 @@ function DashboardContent() {
           sub={`${myCount} transaction${myCount > 1 ? "s" : ""}`}
           icon={TrendingDown}
           tone="indigo"
-        />
-        <KpiCard
-          label={`${partner?.display_name ?? "Partenaire"} · commun`}
-          value={formatCurrency(partnerSpend)}
-          sub={`${partnerCount} sur le budget commun`}
-          icon={Users}
-          tone="purple"
         />
         <KpiCard
           label="Abonnements / mois"
