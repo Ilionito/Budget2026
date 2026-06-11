@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
 import { materializeSubscriptions } from "@/lib/subscriptions";
+import { ensurePersonalBudgetLine } from "@/lib/budget";
 import { useAppStore } from "@/lib/store";
 import { cn, normalizeLabel } from "@/lib/utils";
 import type { Category, LedgerEntry } from "@/types";
@@ -631,11 +632,16 @@ export default function LedgerPage({
       category_id: wantsBudget ? addRow.categoryId : null,
       transaction_id: txId,
     });
-    setSaving(false);
     if (error) {
+      setSaving(false);
       toast.error("Impossible d'ajouter cette entrée");
       return;
     }
+    // Dépense dans une catégorie non-commune → ligne de budget perso auto.
+    if (wantsBudget && parsed.type === "expense") {
+      await ensurePersonalBudgetLine(targetProfile.id, addRow.categoryId, label);
+    }
+    setSaving(false);
     if (wantsBudget) bumpDataVersion();
     const ms = mStart(year, activeMonth);
     const me = mEnd(year, activeMonth);

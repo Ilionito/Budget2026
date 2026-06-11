@@ -23,6 +23,7 @@ import { Switch } from "@/components/ui/switch";
 import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
 import { useAppStore } from "@/lib/store";
 import { cn, normalizeLabel, resolveColor } from "@/lib/utils";
+import { ensurePersonalBudgetLine } from "@/lib/budget";
 import type { BudgetLine, Category, Profile, Transaction } from "@/types";
 
 const NEW_LABEL_VALUE = "__new__";
@@ -385,9 +386,13 @@ export function TransactionForm({ transaction, onSuccess }: TransactionFormProps
       }
     }
 
-    // Volontairement : aucun budget_line n'est créé ici. Le budget commun ne
-    // se remplit que depuis la page Budget ; un nouveau libellé saisi dans une
-    // transaction reste une dépense libre (perso ou non).
+    // Dépense (pas un remboursement, pas un abonnement) dans une catégorie qui
+    // n'est PAS du budget commun → on crée une ligne de budget PERSO pour le
+    // titulaire, afin qu'elle apparaisse automatiquement dans son budget perso.
+    // (Le budget commun, lui, ne se remplit que depuis la page Budget.)
+    if (!isRefund && !isSubscriptionCategory && txId && categoryId) {
+      await ensurePersonalBudgetLine(forUserId, categoryId, trimmedLabel);
+    }
 
     setSaving(false);
     toast.success(isEdit ? "Transaction modifiée" : "Dépense ajoutée");
