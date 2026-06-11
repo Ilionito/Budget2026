@@ -47,12 +47,14 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-/** Menu par défaut, personnalisé pour la personne connectée. */
+/** Menu par défaut. Les deux budgets personnels sont toujours affichés
+ *  et éditables par tout le monde. */
 function buildNavItems(profile: Profile | null): NavItem[] {
-  const firstName = profile?.display_name?.split(" ")[0] ?? "perso";
+  void profile;
   return [
     { id: "budget-commun", href: "/budget", label: "Budget commun", icon: PiggyBank },
-    { id: "budget-perso", href: "/budget/perso", label: `Budget ${firstName}`, icon: Wallet },
+    { id: "budget-ophelie", href: "/budget/ophelie", label: "Budget Ophélie", icon: Wallet },
+    { id: "budget-joris", href: "/budget/joris", label: "Budget Joris", icon: Wallet },
     { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "transactions", href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
     { id: "subscriptions", href: "/subscriptions", label: "Abonnements", icon: Repeat },
