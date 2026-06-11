@@ -27,11 +27,18 @@ import {
   formatCurrency,
   formatMonth,
   getMonthRange,
+  lineAppliesToMonth,
   monthlyEquivalent,
   normalizeLabel,
   resolveColor,
 } from "@/lib/utils";
-import type { Profile, Subscription, Transaction } from "@/types";
+import type {
+  BudgetLine,
+  BudgetLineOverride,
+  Profile,
+  Subscription,
+  Transaction,
+} from "@/types";
 import { KpiCard } from "@/components/shared/KpiCard";
 
 function DashboardCommunContent() {
@@ -39,12 +46,15 @@ function DashboardCommunContent() {
     useAppStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  // Catégories du budget commun : lignes de budget sans propriétaire.
-  const [commonCategoryIds, setCommonCategoryIds] = useState<Set<string>>(
-    new Set()
-  );
+  // Lignes du budget commun (sans propriétaire) + ajustements du mois, pour
+  // calculer le budget prévu du mois.
+  const [lines, setLines] = useState<BudgetLine[]>([]);
+  const [overrides, setOverrides] = useState<BudgetLineOverride[]>([]);
   const [loading, setLoading] = useState(true);
   const loadIdRef = useRef(0);
+
+  const month = currentMonth.getMonth() + 1;
+  const year = currentMonth.getFullYear();
 
   const load = useCallback(
     async (silent = false) => {
@@ -52,7 +62,9 @@ function DashboardCommunContent() {
       const id = ++loadIdRef.current;
       if (!silent) setLoading(true);
       const { start, end } = getMonthRange(currentMonth);
-      const [txRes, subsRes, commonLinesRes] = await Promise.all([
+      const m = currentMonth.getMonth() + 1;
+      const y = currentMonth.getFullYear();
+      const [txRes, subsRes, linesRes, overridesRes] = await Promise.all([
         supabase
           .from("transactions")
           .select("*")
@@ -60,19 +72,19 @@ function DashboardCommunContent() {
           .lte("date", end)
           .order("date", { ascending: false }),
         supabase.from("subscriptions").select("*").eq("is_active", true),
-        supabase.from("budget_lines").select("category_id").is("owner_id", null),
+        supabase.from("budget_lines").select("*").is("owner_id", null),
+        supabase
+          .from("budget_line_overrides")
+          .select("*")
+          .eq("month", m)
+          .eq("year", y),
       ]);
       // Ignore le résultat si une requête plus récente a été lancée entre-temps.
       if (id !== loadIdRef.current) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
-      setCommonCategoryIds(
-        new Set(
-          ((commonLinesRes.data as { category_id: string }[] | null) ?? [])
-            .map((l) => l.category_id)
-            .filter(Boolean)
-        )
-      );
+      setLines((linesRes.data as BudgetLine[] | null) ?? []);
+      setOverrides((overridesRes.data as BudgetLineOverride[] | null) ?? []);
       setLoading(false);
     },
     [ready, profile, currentMonth]
@@ -97,6 +109,11 @@ function DashboardCommunContent() {
     };
   }, [ready, profile, load]);
 
+  const commonCategoryIds = useMemo(
+    () => new Set(lines.map((l) => l.category_id).filter(Boolean)),
+    [lines]
+  );
+
   // Seul jeu de transactions de la page : les dépenses sur le budget commun,
   // peu importe qui paie.
   const commonTx = useMemo(
@@ -108,6 +125,30 @@ function DashboardCommunContent() {
   );
 
   const totalSpend = commonTx.reduce((sum, tx) => sum + Number(tx.amount), 0);
+
+  // Budget prévu du mois (commun) : pour chaque ligne, l'ajustement du mois
+  // s'il existe, sinon le montant prévu mais seulement les mois où la
+  // récurrence s'applique.
+  const totalPlanned = useMemo(
+    () =>
+      lines.reduce((sum, line) => {
+        const override = overrides.find((o) => o.budget_line_id === line.id);
+        if (override) return sum + Number(override.amount_target);
+        return (
+          sum +
+          (lineAppliesToMonth(
+            line.recurrence,
+            line.start_date ?? line.created_at,
+            month,
+            year
+          )
+            ? Number(line.amount_target)
+            : 0)
+        );
+      }, 0),
+    [lines, overrides, month, year]
+  );
+  const withinBudget = totalSpend <= totalPlanned;
 
   // Ordre figé : Ophélie puis Joris, comme sur le budget commun.
   const people = useMemo(() => {
@@ -204,10 +245,20 @@ function DashboardCommunContent() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <KpiCard
           label="Dépensé ce mois"
-          value={formatCurrency(totalSpend)}
-          sub={`${commonTx.length} transaction${commonTx.length > 1 ? "s" : ""}`}
+          value={
+            totalPlanned > 0
+              ? `${formatCurrency(totalSpend)} / ${formatCurrency(totalPlanned)}`
+              : formatCurrency(totalSpend)
+          }
+          sub={
+            totalPlanned > 0
+              ? withinBudget
+                ? `${formatCurrency(totalPlanned - totalSpend)} restants`
+                : `${formatCurrency(totalSpend - totalPlanned)} de dépassement`
+              : `${commonTx.length} transaction${commonTx.length > 1 ? "s" : ""}`
+          }
           icon={TrendingDown}
-          tone="indigo"
+          tone={totalPlanned === 0 ? "indigo" : withinBudget ? "emerald" : "rose"}
         />
         {people.map((person, index) => (
           <KpiCard
