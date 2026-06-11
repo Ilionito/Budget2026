@@ -9,7 +9,6 @@ import {
   ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
-  GripVertical,
   Home,
   LayoutDashboard,
   LogOut,
@@ -40,34 +39,47 @@ import { cn, formatMonth } from "@/lib/utils";
 import type { Category, Profile } from "@/types";
 
 interface NavItem {
-  /** Id stable pour persister l'ordre choisi par chacun. */
   id: string;
   href: string;
   label: string;
   icon: LucideIcon;
 }
 
-/** Menu personnalisé : chacun ne voit que SON budget perso et SON compte,
- *  jamais ceux du partenaire. Le budget commun reste visible par les deux. */
-function buildNavItems(profile: Profile | null): NavItem[] {
+interface NavGroup {
+  id: string;
+  title: string;
+  items: NavItem[];
+}
+
+/** Menu en deux groupes : « Commun » (partagé) et le groupe perso au nom de
+ *  la personne connectée. Chacun ne voit que SON budget perso et SON compte. */
+function buildNavGroups(profile: Profile | null): NavGroup[] {
   const email = profile?.email?.toLowerCase() ?? "";
   const isOphelie = email === ALLOWED_EMAILS[1];
   const slug = isOphelie ? "ophelie" : "joris";
   const firstName =
     profile?.display_name?.split(" ")[0] ?? (isOphelie ? "Ophélie" : "Joris");
   return [
-    { id: "budget-commun", href: "/budget", label: "Budget commun", icon: PiggyBank },
-    { id: "budget-perso", href: `/budget/${slug}`, label: `Budget ${firstName}`, icon: Wallet },
-    { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "transactions", href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-    { id: "subscriptions", href: "/subscriptions", label: "Abonnements", icon: Repeat },
-    { id: "ledger-perso", href: `/ledger/${slug}`, label: `Compte ${firstName}`, icon: NotebookText },
-    { id: "settings", href: "/settings", label: "Réglages", icon: Settings },
+    {
+      id: "commun",
+      title: "Commun",
+      items: [
+        { id: "c-budget", href: "/budget", label: "Budget", icon: PiggyBank },
+        { id: "c-transactions", href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
+        { id: "c-subscriptions", href: "/subscriptions", label: "Abonnements", icon: Repeat },
+      ],
+    },
+    {
+      id: "perso",
+      title: firstName,
+      items: [
+        { id: "p-dashboard", href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { id: "p-budget", href: `/budget/${slug}`, label: "Budget", icon: Wallet },
+        { id: "p-compte", href: `/ledger/${slug}`, label: "Compte", icon: NotebookText },
+        { id: "p-settings", href: "/settings", label: "Réglages", icon: Settings },
+      ],
+    },
   ];
-}
-
-function navOrderKey(profileId: string): string {
-  return `nav-order:${profileId}`;
 }
 
 function Logo({ compact = false }: { compact?: boolean }) {
@@ -121,24 +133,20 @@ function MonthSwitcher({ className }: { className?: string }) {
   );
 }
 
-function NavLinks({
-  items,
-  onReorder,
-  draggable = false,
+function NavSections({
+  groups,
   onNavigate,
 }: {
-  items: NavItem[];
-  /** Déplace fromId juste avant/à la place de toId (réorganisation live). */
-  onReorder?: (fromId: string, toId: string) => void;
-  draggable?: boolean;
+  groups: NavGroup[];
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const [dragId, setDragId] = useState<string | null>(null);
 
-  // Actif = l'entrée dont le href est le plus long préfixe du chemin courant
-  // (sinon « Budget commun » s'allume aussi sur /budget/perso).
-  const activeHref = items.reduce<string | null>((best, item) => {
+  // Actif = l'entrée dont le href est le plus long préfixe du chemin courant,
+  // calculé sur TOUS les groupes (sinon « Budget » commun s'allume aussi sur
+  // /budget/ophelie qui commence par /budget/).
+  const allItems = groups.flatMap((g) => g.items);
+  const activeHref = allItems.reduce<string | null>((best, item) => {
     const matches =
       pathname === item.href || pathname.startsWith(item.href + "/");
     if (!matches) return best;
@@ -146,42 +154,33 @@ function NavLinks({
   }, null);
 
   return (
-    <nav className="flex flex-col gap-1">
-      {items.map(({ id, href, label, icon: Icon }) => {
-        const active = href === activeHref;
-        return (
-          <Link
-            key={id}
-            href={href}
-            onClick={onNavigate}
-            draggable={draggable}
-            onDragStart={draggable ? () => setDragId(id) : undefined}
-            onDragOver={
-              draggable
-                ? (e) => {
-                    e.preventDefault();
-                    if (dragId && dragId !== id) onReorder?.(dragId, id);
-                  }
-                : undefined
-            }
-            onDragEnd={draggable ? () => setDragId(null) : undefined}
-            title={draggable ? "Glisser pour réorganiser" : undefined}
-            className={cn(
-              "group/nav flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150",
-              active
-                ? "bg-indigo-500/10 text-indigo-300"
-                : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200",
-              dragId === id && "opacity-40"
-            )}
-          >
-            <Icon className="size-4 shrink-0" />
-            <span className="flex-1 truncate">{label}</span>
-            {draggable && (
-              <GripVertical className="size-3.5 shrink-0 cursor-grab text-zinc-700 opacity-0 transition-opacity group-hover/nav:opacity-100" />
-            )}
-          </Link>
-        );
-      })}
+    <nav className="flex flex-col gap-5">
+      {groups.map((group) => (
+        <div key={group.id} className="flex flex-col gap-1">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
+            {group.title}
+          </p>
+          {group.items.map(({ id, href, label, icon: Icon }) => {
+            const active = href === activeHref;
+            return (
+              <Link
+                key={id}
+                href={href}
+                onClick={onNavigate}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors duration-150",
+                  active
+                    ? "bg-indigo-500/10 text-indigo-300"
+                    : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                <span className="flex-1 truncate">{label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
     </nav>
   );
 }
@@ -205,49 +204,8 @@ export function AppShell({
   const [checking, setChecking] = useState(() => !useAppStore.getState().ready);
   const [menuOpen, setMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  /** Ordre du menu choisi par la personne (ids), null = ordre par défaut. */
-  const [navOrder, setNavOrder] = useState<string[] | null>(null);
 
-  const navItems = useMemo(() => buildNavItems(profile), [profile]);
-
-  // Charge l'ordre sauvegardé (par personne, par appareil).
-  useEffect(() => {
-    if (!profile) return;
-    try {
-      const raw = localStorage.getItem(navOrderKey(profile.id));
-      setNavOrder(raw ? (JSON.parse(raw) as string[]) : null);
-    } catch {
-      setNavOrder(null);
-    }
-  }, [profile]);
-
-  const orderedNav = useMemo(() => {
-    if (!navOrder) return navItems;
-    const rank = new Map(navOrder.map((id, index) => [id, index]));
-    // Les entrées inconnues de l'ordre sauvegardé (futurs ajouts) vont en fin,
-    // dans leur ordre par défaut (sort stable).
-    return [...navItems].sort(
-      (a, b) =>
-        (rank.get(a.id) ?? navOrder.length) -
-        (rank.get(b.id) ?? navOrder.length)
-    );
-  }, [navItems, navOrder]);
-
-  function handleNavReorder(fromId: string, toId: string) {
-    const ids = orderedNav.map((item) => item.id);
-    const from = ids.indexOf(fromId);
-    const to = ids.indexOf(toId);
-    if (from < 0 || to < 0) return;
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
-    setNavOrder(ids);
-    if (profile) {
-      try {
-        localStorage.setItem(navOrderKey(profile.id), JSON.stringify(ids));
-      } catch {
-        // localStorage indisponible : l'ordre vaut pour la session seulement.
-      }
-    }
-  }
+  const navGroups = useMemo(() => buildNavGroups(profile), [profile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -353,7 +311,7 @@ export function AppShell({
           <MonthSwitcher />
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-2">
-          <NavLinks items={orderedNav} draggable onReorder={handleNavReorder} />
+          <NavSections groups={navGroups} />
         </div>
         <div className="flex items-center gap-2 border-t border-zinc-800/60 p-4">
           <UserAvatar profile={profile} />
@@ -401,7 +359,7 @@ export function AppShell({
               Navigation principale
             </SheetDescription>
           </SheetHeader>
-          <NavLinks items={orderedNav} onNavigate={() => setMenuOpen(false)} />
+          <NavSections groups={navGroups} onNavigate={() => setMenuOpen(false)} />
           <div className="mt-auto flex items-center gap-2 border-t border-zinc-800/60 pt-4">
             <UserAvatar profile={profile} />
             <div className="min-w-0 flex-1">
