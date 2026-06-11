@@ -30,7 +30,11 @@ export default function AuthPage() {
     });
     setSigning(false);
     if (error) {
-      toast.error("Mot de passe incorrect");
+      // Message précis : identifiants invalides vs problème de config/réseau.
+      const msg = /invalid login credentials/i.test(error.message)
+        ? "Mot de passe incorrect"
+        : `Connexion impossible : ${error.message}`;
+      toast.error(msg);
       return;
     }
     router.replace("/dashboard");
