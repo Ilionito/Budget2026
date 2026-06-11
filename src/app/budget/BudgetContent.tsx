@@ -213,7 +213,7 @@ function EditLineDialog({
         category_id: categoryId,
         amount_target: parsed,
         recurrence,
-        start_date: recurrence === "monthly" ? null : startDate || null,
+        start_date: startDate || null,
       })
       .eq("id", line.id);
     setSaving(false);
@@ -311,17 +311,14 @@ function EditLineDialog({
             </div>
           </div>
 
-          {recurrence !== "monthly" && (
-            <div className="grid gap-1.5">
-              <Label htmlFor="edit-start">Début</Label>
-              <DatePicker
-                id="edit-start"
-                value={startDate}
-                onChange={setStartDate}
-              />
-              <p className="text-xs text-zinc-600">1re échéance</p>
-            </div>
-          )}
+          <div className="grid gap-1.5">
+            <Label htmlFor="edit-start">Début</Label>
+            <DatePicker id="edit-start" value={startDate} onChange={setStartDate} />
+            <p className="text-xs text-zinc-600">
+              1re échéance (utile pour les récurrences espacées : tous les 3 mois,
+              6 mois…)
+            </p>
+          </div>
 
           <Button type="submit" disabled={saving} className="w-full">
             {saving ? <Loader2 className="animate-spin" /> : null}
