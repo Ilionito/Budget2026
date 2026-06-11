@@ -108,8 +108,11 @@ function DashboardCommunContent() {
       .filter((tx) => tx.user_id === personId)
       .reduce((sum, tx) => sum + Number(tx.amount), 0);
 
-  const subsMonthly = subscriptions.reduce(
-    (sum, sub) => sum + monthlyEquivalent(Number(sub.amount), sub.frequency),
+  // Vue commune : uniquement les abonnements partagés, à leur coût réel
+  // (2 × la moitié saisie pour chaque personne).
+  const sharedSubs = subscriptions.filter((sub) => sub.is_shared);
+  const subsMonthly = sharedSubs.reduce(
+    (sum, sub) => sum + 2 * monthlyEquivalent(Number(sub.amount), sub.frequency),
     0
   );
 
@@ -201,7 +204,7 @@ function DashboardCommunContent() {
         <KpiCard
           label="Abonnements / mois"
           value={formatCurrency(subsMonthly)}
-          sub={`${subscriptions.length} actif${subscriptions.length > 1 ? "s" : ""}`}
+          sub={`${sharedSubs.length} commun${sharedSubs.length > 1 ? "s" : ""}`}
           icon={Repeat}
           tone="amber"
         />

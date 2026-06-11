@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { format } from "date-fns";
-import { CalendarClock, Loader2, Lock, Plus, Power, Repeat, Trash2 } from "lucide-react";
+import {
+  CalendarClock,
+  Loader2,
+  Lock,
+  Plus,
+  Power,
+  Repeat,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -81,6 +90,12 @@ function SubscriptionRow({
           {subscription.is_private && (
             <Lock className="size-3 shrink-0 text-zinc-600" aria-label="Privé" />
           )}
+          {subscription.is_shared && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[10px] font-medium text-indigo-300">
+              <Users className="size-2.5" aria-hidden />
+              Commun
+            </span>
+          )}
         </div>
         <p className="truncate text-xs text-zinc-600">
           {category?.label ?? "Sans catégorie"} · {frequencyLabel}
@@ -144,6 +159,7 @@ function AddSubscriptionDialog({
   const [categoryId, setCategoryId] = useState("");
   const [nextDate, setNextDate] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
+  const [isShared, setIsShared] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -154,6 +170,7 @@ function AddSubscriptionDialog({
       setCategoryId("");
       setNextDate(format(new Date(), "yyyy-MM-dd"));
       setIsPrivate(false);
+      setIsShared(false);
     }
   }, [open]);
 
@@ -182,7 +199,9 @@ function AddSubscriptionDialog({
       category_id: categoryId,
       next_date: nextDate || null,
       is_active: true,
-      is_private: isPrivate,
+      // Un abonnement commun est visible par les deux : on force le privé à faux.
+      is_private: isShared ? false : isPrivate,
+      is_shared: isShared,
     });
     setSaving(false);
     if (error) {
@@ -218,7 +237,9 @@ function AddSubscriptionDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="sub-amount">Montant (€)</Label>
+              <Label htmlFor="sub-amount">
+                {isShared ? "Montant — ta part (moitié) (€)" : "Montant (€)"}
+              </Label>
               <Input
                 id="sub-amount"
                 inputMode="decimal"
@@ -282,7 +303,30 @@ function AddSubscriptionDialog({
                 <p className="text-xs text-zinc-600">Visible uniquement par toi</p>
               </div>
             </div>
-            <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
+            <Switch
+              checked={isPrivate}
+              disabled={isShared}
+              onCheckedChange={setIsPrivate}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-zinc-800 px-3 py-2.5">
+            <div className="flex items-center gap-2.5">
+              <Users className="size-4 text-indigo-400" />
+              <div>
+                <p className="text-sm text-zinc-200">Abonnement commun</p>
+                <p className="text-xs text-zinc-600">
+                  Partagé en deux · saisis ta part (moitié)
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={isShared}
+              onCheckedChange={(checked) => {
+                setIsShared(checked);
+                if (checked) setIsPrivate(false);
+              }}
+            />
           </div>
 
           <Button type="submit" disabled={saving} className="w-full">
@@ -317,24 +361,38 @@ function SubscriptionsContent() {
     load();
   }, [ready, profile, dataVersion, load]);
 
+  const sharedActive = subscriptions.filter((s) => s.is_shared && s.is_active);
   const mineActive = subscriptions.filter(
-    (s) => s.user_id === profile?.id && s.is_active
+    (s) => !s.is_shared && s.user_id === profile?.id && s.is_active
   );
   const mineSuspended = subscriptions.filter(
-    (s) => s.user_id === profile?.id && !s.is_active
+    (s) => !s.is_shared && s.user_id === profile?.id && !s.is_active
   );
   const partnerActive = subscriptions.filter(
-    (s) => s.user_id !== profile?.id && s.is_active
+    (s) => !s.is_shared && s.user_id !== profile?.id && s.is_active
   );
 
-  const householdMonthly = [...mineActive, ...partnerActive].reduce(
-    (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
-    0
-  );
-  const myMonthly = mineActive.reduce(
-    (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
-    0
-  );
+  // Total foyer : toutes les charges non partagées (chacun son coût plein)
+  // + le coût réel des abonnements communs (2 × la moitié saisie).
+  const householdMonthly =
+    [...mineActive, ...partnerActive].reduce(
+      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
+      0
+    ) +
+    sharedActive.reduce(
+      (sum, s) => sum + 2 * monthlyEquivalent(Number(s.amount), s.frequency),
+      0
+    );
+  // Mes charges : mes abonnements perso (coût plein) + ma moitié des communs.
+  const myMonthly =
+    mineActive.reduce(
+      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
+      0
+    ) +
+    sharedActive.reduce(
+      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
+      0
+    );
 
   /** Retire du compte les échéances futures non pointées d'un abonnement. */
   async function removeFutureEntries(subscriptionId: string) {
@@ -430,6 +488,23 @@ function SubscriptionsContent() {
           </p>
         </Card>
       </div>
+
+      {sharedActive.length > 0 && (
+        <Card>
+          <CardTitle>Abonnements communs</CardTitle>
+          <div className="mt-2">
+            {sharedActive.map((s) => (
+              <SubscriptionRow
+                key={s.id}
+                subscription={s}
+                mine
+                onToggle={() => handleToggle(s)}
+                onDelete={() => handleDelete(s)}
+              />
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Listes côte à côte sur grand écran pour limiter le scroll. */}
       <div className="grid items-start gap-4 lg:grid-cols-2">

@@ -39,6 +39,7 @@ export interface Subscription {
   next_date: string | null;
   is_active: boolean;
   is_private: boolean;
+  is_shared: boolean;
   /** Date jusqu'à laquelle les échéances futures ont déjà été générées
    *  dans le compte (ledger). Null = jamais généré. */
   materialized_until: string | null;

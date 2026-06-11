@@ -78,11 +78,7 @@ function DashboardContent() {
           .eq("month", currentMonth.getMonth() + 1)
           .eq("year", currentMonth.getFullYear())
           .maybeSingle(),
-        supabase
-          .from("subscriptions")
-          .select("*")
-          .eq("is_active", true)
-          .eq("user_id", userId),
+        supabase.from("subscriptions").select("*").eq("is_active", true),
         supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
       if (cancelled) return;
@@ -136,7 +132,12 @@ function DashboardContent() {
   const partnerCount = partnerCommon.length;
   const net = income ? Number(income.net_transferred) : 0;
   const balance = net - mySpend;
-  const subsMonthly = subscriptions.reduce(
+  // Vue personnelle : mes abonnements perso (coût plein) + ma moitié des
+  // abonnements communs (le montant saisi représente déjà une part).
+  const mySubs = subscriptions.filter(
+    (sub) => sub.is_shared || sub.user_id === me
+  );
+  const subsMonthly = mySubs.reduce(
     (sum, sub) => sum + monthlyEquivalent(Number(sub.amount), sub.frequency),
     0
   );
@@ -234,7 +235,7 @@ function DashboardContent() {
         <KpiCard
           label="Abonnements / mois"
           value={formatCurrency(subsMonthly)}
-          sub={`${subscriptions.length} actif${subscriptions.length > 1 ? "s" : ""}`}
+          sub={`${mySubs.length} actif${mySubs.length > 1 ? "s" : ""}`}
           icon={Repeat}
           tone="amber"
         />
