@@ -91,6 +91,11 @@ function DashboardContent() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [income, setIncome] = useState<MonthlyIncome | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  // Catégories du budget commun : servent à distinguer une dépense partagée
+  // d'une dépense purement perso (du partenaire) à exclure du dashboard.
+  const [commonCategoryIds, setCommonCategoryIds] = useState<Set<string>>(
+    new Set()
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -103,7 +108,7 @@ function DashboardContent() {
     async function load() {
       setLoading(true);
       const { start, end } = getMonthRange(currentMonth);
-      const [txRes, incomeRes, subsRes] = await Promise.all([
+      const [txRes, incomeRes, subsRes, commonLinesRes] = await Promise.all([
         supabase
           .from("transactions")
           .select("*")
@@ -118,11 +123,19 @@ function DashboardContent() {
           .eq("year", currentMonth.getFullYear())
           .maybeSingle(),
         supabase.from("subscriptions").select("*").eq("is_active", true),
+        supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
       if (cancelled) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
       setIncome((incomeRes.data as MonthlyIncome | null) ?? null);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
+      setCommonCategoryIds(
+        new Set(
+          ((commonLinesRes.data as { category_id: string }[] | null) ?? [])
+            .map((l) => l.category_id)
+            .filter(Boolean)
+        )
+      );
       setLoading(false);
     }
 
@@ -132,16 +145,35 @@ function DashboardContent() {
     };
   }, [ready, profile, currentMonth, dataVersion]);
 
+  const me = profile?.id;
+  // Vue personnelle : budget commun (partagé, peu importe qui paie) + MES
+  // dépenses. On exclut les dépenses purement perso du partenaire.
+  const relevant = useMemo(
+    () =>
+      transactions.filter(
+        (tx) =>
+          (tx.category_id && commonCategoryIds.has(tx.category_id)) ||
+          tx.user_id === me
+      ),
+    [transactions, commonCategoryIds, me]
+  );
+
   const mySpend = transactions
-    .filter((tx) => tx.user_id === profile?.id)
+    .filter((tx) => tx.user_id === me)
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const myCount = transactions.filter((tx) => tx.user_id === profile?.id).length;
-  const partnerSpend = transactions
-    .filter((tx) => tx.user_id !== profile?.id)
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const partnerCount = transactions.filter(
-    (tx) => tx.user_id !== profile?.id
-  ).length;
+  const myCount = transactions.filter((tx) => tx.user_id === me).length;
+  // Part du partenaire SUR LE BUDGET COMMUN uniquement (pas ses dépenses perso).
+  const partnerCommon = transactions.filter(
+    (tx) =>
+      tx.user_id !== me &&
+      tx.category_id &&
+      commonCategoryIds.has(tx.category_id)
+  );
+  const partnerSpend = partnerCommon.reduce(
+    (sum, tx) => sum + Number(tx.amount),
+    0
+  );
+  const partnerCount = partnerCommon.length;
   const net = income ? Number(income.net_transferred) : 0;
   const balance = net - mySpend;
   const subsMonthly = subscriptions.reduce(
@@ -155,7 +187,7 @@ function DashboardContent() {
       ? new Date().getDate()
       : getDaysInMonth(currentMonth);
     const byDay = new Array<number>(getDaysInMonth(currentMonth)).fill(0);
-    for (const tx of transactions) {
+    for (const tx of relevant) {
       const day = parseISO(tx.date).getDate();
       byDay[day - 1] += Number(tx.amount);
     }
@@ -164,13 +196,13 @@ function DashboardContent() {
       cumulative += value;
       return { day: index + 1, total: Math.round(cumulative * 100) / 100 };
     });
-  }, [transactions, currentMonth]);
+  }, [relevant, currentMonth]);
 
   const pieData = useMemo(() => {
     const rows = categories
       .map((category) => ({
         name: category.label,
-        value: transactions
+        value: relevant
           .filter((tx) => tx.category_id === category.id)
           .reduce((sum, tx) => sum + Number(tx.amount), 0),
         color: resolveColor(category.color),
@@ -179,14 +211,14 @@ function DashboardContent() {
       .sort((a, b) => b.value - a.value);
     const top = rows.slice(0, 5);
     const rest = rows.slice(5).reduce((sum, row) => sum + row.value, 0);
-    const uncategorized = transactions
+    const uncategorized = relevant
       .filter((tx) => !tx.category_id)
       .reduce((sum, tx) => sum + Number(tx.amount), 0);
     if (rest + uncategorized > 0) {
       top.push({ name: "Autres", value: rest + uncategorized, color: "#52525b" });
     }
     return top;
-  }, [transactions, categories]);
+  }, [relevant, categories]);
 
   if (loading) {
     return (
@@ -233,9 +265,9 @@ function DashboardContent() {
           tone="indigo"
         />
         <KpiCard
-          label={`Dépenses de ${partner?.display_name ?? "ton partenaire"}`}
+          label={`${partner?.display_name ?? "Partenaire"} · commun`}
           value={formatCurrency(partnerSpend)}
-          sub={`${partnerCount} transaction${partnerCount > 1 ? "s" : ""}`}
+          sub={`${partnerCount} sur le budget commun`}
           icon={Users}
           tone="purple"
         />
@@ -309,7 +341,7 @@ function DashboardContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={transactions} />
+        <CategoryBreakdown transactions={relevant} />
         </div>
 
         {/* Rail droit : revenus, répartition, dernières transactions */}
@@ -374,7 +406,7 @@ function DashboardContent() {
             </>
           )}
         </Card>
-        <RecentTransactions transactions={transactions} />
+        <RecentTransactions transactions={relevant} />
         </div>
       </div>
     </div>

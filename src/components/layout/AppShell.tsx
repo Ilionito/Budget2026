@@ -34,7 +34,7 @@ import {
 import { AddTransactionSheet } from "@/components/shared/AddTransactionSheet";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { UserAvatar } from "@/components/shared/UserAvatar";
-import { supabase, DEFAULT_NAMES } from "@/lib/supabase";
+import { supabase, DEFAULT_NAMES, ALLOWED_EMAILS } from "@/lib/supabase";
 import { useAppStore } from "@/lib/store";
 import { cn, formatMonth } from "@/lib/utils";
 import type { Category, Profile } from "@/types";
@@ -47,19 +47,21 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-/** Menu par défaut. Les deux budgets personnels sont toujours affichés
- *  et éditables par tout le monde. */
+/** Menu personnalisé : chacun ne voit que SON budget perso et SON compte,
+ *  jamais ceux du partenaire. Le budget commun reste visible par les deux. */
 function buildNavItems(profile: Profile | null): NavItem[] {
-  void profile;
+  const email = profile?.email?.toLowerCase() ?? "";
+  const isOphelie = email === ALLOWED_EMAILS[1];
+  const slug = isOphelie ? "ophelie" : "joris";
+  const firstName =
+    profile?.display_name?.split(" ")[0] ?? (isOphelie ? "Ophélie" : "Joris");
   return [
     { id: "budget-commun", href: "/budget", label: "Budget commun", icon: PiggyBank },
-    { id: "budget-ophelie", href: "/budget/ophelie", label: "Budget Ophélie", icon: Wallet },
-    { id: "budget-joris", href: "/budget/joris", label: "Budget Joris", icon: Wallet },
+    { id: "budget-perso", href: `/budget/${slug}`, label: `Budget ${firstName}`, icon: Wallet },
     { id: "dashboard", href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "transactions", href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
     { id: "subscriptions", href: "/subscriptions", label: "Abonnements", icon: Repeat },
-    { id: "ledger-joris", href: "/ledger/joris", label: "Compte Joris", icon: NotebookText },
-    { id: "ledger-ophelie", href: "/ledger/ophelie", label: "Compte Ophélie", icon: NotebookText },
+    { id: "ledger-perso", href: `/ledger/${slug}`, label: `Compte ${firstName}`, icon: NotebookText },
     { id: "settings", href: "/settings", label: "Réglages", icon: Settings },
   ];
 }
