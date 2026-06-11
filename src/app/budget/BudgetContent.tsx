@@ -1059,7 +1059,7 @@ export function BudgetContent({
                           ) : (
                             <span
                               className={
-                                gap < 0 ? "text-rose-400" : "text-zinc-400"
+                                gap < 0 ? "text-rose-400" : "text-emerald-400"
                               }
                             >
                               {formatCurrency(gap)}
@@ -1179,7 +1179,7 @@ export function BudgetContent({
                       ) : (
                         <span
                           className={
-                            groupGap < 0 ? "text-rose-400" : "text-zinc-400"
+                            groupGap < 0 ? "text-rose-400" : "text-emerald-400"
                           }
                         >
                           {formatCurrency(groupGap)}
