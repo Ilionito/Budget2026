@@ -796,6 +796,7 @@ export function BudgetContent({
     ? gridRealTotal
     : transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
   const globalGap = totalPlanned - allRealTotal;
+  const withinBudget = allRealTotal <= totalPlanned;
 
   async function commitPlanned(line: BudgetLine, value: number) {
     const override = overrides.find((o) => o.budget_line_id === line.id);
@@ -981,10 +982,24 @@ export function BudgetContent({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Budget prévu
+            Dépensé / budget
           </p>
-          <p className="mt-2 text-xl font-semibold tabular-nums text-white">
-            {formatCurrency(totalPlanned)}
+          <p className="mt-2 text-xl font-semibold tabular-nums">
+            {totalPlanned > 0 ? (
+              <>
+                <span
+                  className={withinBudget ? "text-emerald-400" : "text-rose-400"}
+                >
+                  {formatCurrency(allRealTotal)}
+                </span>
+                <span className="text-zinc-300">
+                  {" "}
+                  / {formatCurrency(totalPlanned)}
+                </span>
+              </>
+            ) : (
+              <span className="text-white">{formatCurrency(allRealTotal)}</span>
+            )}
           </p>
         </Card>
         {people.map((person) => (
