@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-/** Seules ces adresses peuvent recevoir un lien magique. */
+/** Seules ces adresses peuvent se connecter. */
 export const ALLOWED_EMAILS = [
   "hillion.joris00@gmail.com",
   "ophelie.bo73@gmail.com",
@@ -11,6 +11,12 @@ export const DEFAULT_NAMES: Record<string, string> = {
   "hillion.joris00@gmail.com": "Joris",
   "ophelie.bo73@gmail.com": "Ophélie",
 };
+
+/** Comptes connectables : on choisit le prénom, le mot de passe fait le reste. */
+export const USERS = [
+  { name: "Joris", email: "hillion.joris00@gmail.com" },
+  { name: "Ophélie", email: "ophelie.bo73@gmail.com" },
+] as const;
 
 export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
