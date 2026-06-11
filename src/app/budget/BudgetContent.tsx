@@ -550,8 +550,16 @@ export function BudgetContent({
 }: {
   ownerEmail?: string | null;
 }) {
-  const { profile, partner, categories, currentMonth, dataVersion, ready, setCategories } =
-    useAppStore();
+  const {
+    profile,
+    partner,
+    categories,
+    currentMonth,
+    dataVersion,
+    ready,
+    setCategories,
+    bumpDataVersion,
+  } = useAppStore();
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [overrides, setOverrides] = useState<BudgetLineOverride[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -640,6 +648,65 @@ export function BudgetContent({
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [ready, profile, isPersonal, owner, load]);
+
+  // Budget perso : rattrapage automatique. Crée les lignes manquantes pour mes
+  // dépenses déjà saisies dans des catégories NON-communes, pour qu'elles
+  // apparaissent dans le budget perso (et le « Dépensé/budget » du dashboard).
+  const backfilledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isPersonal || !owner || loading) return;
+    if (backfilledRef.current === owner.id) return;
+    backfilledRef.current = owner.id;
+    let cancelled = false;
+    (async () => {
+      const { data: commonCats } = await supabase
+        .from("budget_lines")
+        .select("category_id")
+        .is("owner_id", null);
+      if (cancelled) return;
+      const commonSet = new Set(
+        ((commonCats as { category_id: string }[] | null) ?? []).map(
+          (c) => c.category_id
+        )
+      );
+      const existing = new Set(
+        lines.map((l) => `${l.category_id}::${normalizeLabel(l.label)}`)
+      );
+      const seen = new Set<string>();
+      const toCreate: Record<string, unknown>[] = [];
+      for (const tx of transactions) {
+        if (
+          tx.user_id !== owner.id ||
+          !tx.category_id ||
+          Number(tx.amount) <= 0 ||
+          !tx.label?.trim() ||
+          commonSet.has(tx.category_id)
+        )
+          continue;
+        const key = `${tx.category_id}::${normalizeLabel(tx.label)}`;
+        if (existing.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        toCreate.push({
+          owner_id: owner.id,
+          category_id: tx.category_id,
+          label: tx.label.trim(),
+          amount_target: 0,
+          recurrence: "monthly",
+          created_by: owner.id,
+        });
+      }
+      if (toCreate.length > 0) {
+        const { error } = await supabase.from("budget_lines").insert(toCreate);
+        if (!error && !cancelled) {
+          load();
+          bumpDataVersion();
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPersonal, owner, loading, transactions, lines, load, bumpDataVersion]);
 
   // Seed initial : si la table budget_lines est vide, créer les lignes par défaut.
   // Réservé au budget commun ; les budgets personnels démarrent vides.
