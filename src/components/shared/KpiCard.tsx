@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
@@ -17,7 +18,7 @@ export function KpiCard({
   tone,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   sub: string;
   icon: LucideIcon;
   tone: keyof typeof TONES;

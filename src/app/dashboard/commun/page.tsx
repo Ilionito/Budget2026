@@ -246,9 +246,17 @@ function DashboardCommunContent() {
         <KpiCard
           label="Dépensé ce mois"
           value={
-            totalPlanned > 0
-              ? `${formatCurrency(totalSpend)} / ${formatCurrency(totalPlanned)}`
-              : formatCurrency(totalSpend)
+            totalPlanned > 0 ? (
+              <>
+                {formatCurrency(totalSpend)}
+                <span className="text-zinc-300">
+                  {" "}
+                  / {formatCurrency(totalPlanned)}
+                </span>
+              </>
+            ) : (
+              formatCurrency(totalSpend)
+            )
           }
           sub={
             totalPlanned > 0
