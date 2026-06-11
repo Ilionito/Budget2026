@@ -14,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -57,6 +56,21 @@ import {
 } from "@/types";
 
 const SAISIE_NOTE = "saisie budget";
+
+const MONTHS_FR = [
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
+];
 
 const SEED_LINES: { category: string; label: string; amount: number }[] = [
   { category: "Courses", label: "Drive Leclerc", amount: 400 },
@@ -312,8 +326,48 @@ function EditLineDialog({
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="edit-start">Début</Label>
-            <DatePicker id="edit-start" value={startDate} onChange={setStartDate} />
+            <Label>Début</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                value={startDate.slice(5, 7) || "01"}
+                onValueChange={(m) =>
+                  setStartDate(
+                    `${startDate.slice(0, 4) || String(new Date().getFullYear())}-${m}-01`
+                  )
+                }
+              >
+                <SelectTrigger aria-label="Mois de début">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTHS_FR.map((name, i) => (
+                    <SelectItem key={i} value={String(i + 1).padStart(2, "0")}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={startDate.slice(0, 4) || String(new Date().getFullYear())}
+                onValueChange={(y) =>
+                  setStartDate(`${y}-${startDate.slice(5, 7) || "01"}-01`)
+                }
+              >
+                <SelectTrigger aria-label="Année de début">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(
+                    { length: 7 },
+                    (_, i) => new Date().getFullYear() - 1 + i
+                  ).map((y) => (
+                    <SelectItem key={y} value={String(y)}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <p className="text-xs text-zinc-600">
               1re échéance (utile pour les récurrences espacées : tous les 3 mois,
               6 mois…)
