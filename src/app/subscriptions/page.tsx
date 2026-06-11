@@ -336,22 +336,41 @@ function SubscriptionsContent() {
     0
   );
 
+  /** Retire du compte les échéances futures non pointées d'un abonnement. */
+  async function removeFutureEntries(subscriptionId: string) {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    await supabase
+      .from("ledger_entries")
+      .delete()
+      .eq("subscription_id", subscriptionId)
+      .eq("is_checked", false)
+      .gte("date", todayStr);
+  }
+
   async function handleToggle(subscription: Subscription) {
+    const reactivating = !subscription.is_active;
+    if (!reactivating) {
+      // Suspension : on enlève les échéances à venir non encore pointées.
+      await removeFutureEntries(subscription.id);
+    }
     const { error } = await supabase
       .from("subscriptions")
-      .update({ is_active: !subscription.is_active })
+      // materialized_until remis à zéro : à la réactivation, le compte
+      // regénère les échéances futures à la prochaine ouverture.
+      .update({ is_active: reactivating, materialized_until: null })
       .eq("id", subscription.id);
     if (error) {
       toast.error("Impossible de modifier cet abonnement");
       return;
     }
-    toast.success(
-      subscription.is_active ? "Abonnement suspendu" : "Abonnement réactivé"
-    );
+    toast.success(reactivating ? "Abonnement réactivé" : "Abonnement suspendu");
     bumpDataVersion();
   }
 
   async function handleDelete(subscription: Subscription) {
+    // D'abord les échéances futures non pointées, ensuite l'abonnement.
+    // Les écritures passées / déjà pointées sont conservées (historique).
+    await removeFutureEntries(subscription.id);
     const { error } = await supabase
       .from("subscriptions")
       .delete()

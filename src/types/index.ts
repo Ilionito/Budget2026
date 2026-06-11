@@ -39,6 +39,9 @@ export interface Subscription {
   next_date: string | null;
   is_active: boolean;
   is_private: boolean;
+  /** Date jusqu'à laquelle les échéances futures ont déjà été générées
+   *  dans le compte (ledger). Null = jamais généré. */
+  materialized_until: string | null;
 }
 
 export interface MonthlyIncome {
@@ -245,6 +248,8 @@ export interface LedgerEntry {
   category_id: string | null;
   /** Transaction liée dans le budget commun quand l'écriture y est intégrée. */
   transaction_id: string | null;
+  /** Abonnement qui a généré cette écriture (null = saisie manuelle). */
+  subscription_id: string | null;
   created_at: string;
 }
 

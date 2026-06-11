@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   Area,
@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Check, Eye, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, Eye, Loader2, Pencil, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,6 +39,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
+import { materializeSubscriptions } from "@/lib/subscriptions";
 import { useAppStore } from "@/lib/store";
 import { cn, normalizeLabel } from "@/lib/utils";
 import type { Category, LedgerEntry } from "@/types";
@@ -199,9 +200,19 @@ export default function LedgerPage({
   );
   const isOwner = !!targetProfile && targetProfile.id === profile?.id;
 
+  // Profil pour lequel les abonnements ont déjà été matérialisés ce montage,
+  // pour ne lancer la génération qu'une fois (et seulement sur son propre compte).
+  const materializedFor = useRef<string | null>(null);
+
   const load = useCallback(async () => {
     if (!targetProfile) return;
     setLoading(true);
+    // Génère les échéances futures manquantes des abonnements actifs avant
+    // d'afficher le mois : elles apparaissent comme des écritures « À venir ».
+    if (isOwner && materializedFor.current !== targetProfile.id) {
+      materializedFor.current = targetProfile.id;
+      await materializeSubscriptions(targetProfile.id);
+    }
     const { data } = await supabase
       .from("ledger_entries")
       .select("*")
@@ -210,7 +221,7 @@ export default function LedgerPage({
       .order("created_at", { ascending: true });
     setEntries((data as LedgerEntry[] | null) ?? []);
     setLoading(false);
-  }, [targetProfile]);
+  }, [targetProfile, isOwner]);
 
   // dataVersion : recharge quand une transaction est ajoutée ailleurs (FAB…).
   useEffect(() => {
@@ -855,6 +866,15 @@ export default function LedgerPage({
               />
             )}
             <span className="text-sm font-medium text-zinc-200">{entry.label}</span>
+            {entry.subscription_id && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-300"
+                title="Généré depuis un abonnement"
+              >
+                <Repeat className="size-2.5" />
+                Abonnement
+              </span>
+            )}
             {isFuture && (
               <span className="inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
                 À venir
