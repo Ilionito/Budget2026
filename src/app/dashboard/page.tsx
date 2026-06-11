@@ -78,7 +78,11 @@ function DashboardContent() {
           .eq("month", currentMonth.getMonth() + 1)
           .eq("year", currentMonth.getFullYear())
           .maybeSingle(),
-        supabase.from("subscriptions").select("*").eq("is_active", true),
+        supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("is_active", true)
+          .eq("user_id", userId),
         supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
       if (cancelled) return;
@@ -371,7 +375,7 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <AppShell wide>
+    <AppShell fullWidth>
       <DashboardContent />
     </AppShell>
   );

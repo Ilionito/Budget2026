@@ -214,7 +214,7 @@ function SettingsContent() {
 
 export default function SettingsPage() {
   return (
-    <AppShell>
+    <AppShell fullWidth>
       <SettingsContent />
     </AppShell>
   );

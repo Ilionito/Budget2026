@@ -210,7 +210,7 @@ function TransactionsContent() {
 
 export default function TransactionsPage() {
   return (
-    <AppShell wide>
+    <AppShell fullWidth>
       <TransactionsContent />
     </AppShell>
   );

@@ -341,7 +341,7 @@ function DashboardCommunContent() {
 
 export default function DashboardCommunPage() {
   return (
-    <AppShell wide>
+    <AppShell fullWidth>
       <DashboardCommunContent />
     </AppShell>
   );

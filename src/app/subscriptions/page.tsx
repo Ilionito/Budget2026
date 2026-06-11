@@ -504,7 +504,7 @@ function SubscriptionsContent() {
 
 export default function SubscriptionsPage() {
   return (
-    <AppShell wide>
+    <AppShell fullWidth>
       <SubscriptionsContent />
     </AppShell>
   );
