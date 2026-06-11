@@ -13,6 +13,10 @@ import { useAppStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/utils";
 import type { MonthlyIncome } from "@/types";
 
+/** Note qui identifie l'écriture « entrée » du Compte générée depuis les
+ *  revenus du mois (pour la retrouver / mettre à jour sans doublon). */
+const REVENU_NOTE = "revenu mensuel";
+
 function parseAmount(value: string): number | null {
   const parsed = Number.parseFloat(value.replace(",", "."));
   if (!Number.isFinite(parsed) || parsed < 0) return null;
@@ -66,11 +70,51 @@ export function IncomeWidget({
           month: currentMonth.getMonth() + 1,
           year: currentMonth.getFullYear(),
         });
-    setSaving(false);
     if (error) {
+      setSaving(false);
       toast.error("Impossible d'enregistrer les revenus");
       return;
     }
+
+    // Synchronise le « viré sur le compte » comme une ENTRÉE dans le Compte
+    // (ledger). Une seule écriture par mois, repérée par sa note + sa date.
+    const y = currentMonth.getFullYear();
+    const m = currentMonth.getMonth() + 1;
+    const entryDate = `${y}-${String(m).padStart(2, "0")}-01`;
+    const { data: existing } = await supabase
+      .from("ledger_entries")
+      .select("id")
+      .eq("user_id", profile.id)
+      .eq("note", REVENU_NOTE)
+      .eq("date", entryDate)
+      .maybeSingle();
+    const existingId = (existing as { id: string } | null)?.id ?? null;
+    if (netAmount > 0) {
+      const label = note.trim() || "Revenu";
+      if (existingId) {
+        await supabase
+          .from("ledger_entries")
+          .update({ amount: netAmount, label })
+          .eq("id", existingId);
+      } else {
+        await supabase.from("ledger_entries").insert({
+          user_id: profile.id,
+          date: entryDate,
+          label,
+          amount: netAmount,
+          type: "income",
+          note: REVENU_NOTE,
+          is_checked: false,
+          category_id: null,
+          transaction_id: null,
+        });
+      }
+    } else if (existingId) {
+      // Revenu remis à 0 → on retire l'entrée correspondante.
+      await supabase.from("ledger_entries").delete().eq("id", existingId);
+    }
+
+    setSaving(false);
     toast.success("Revenus enregistrés");
     setEditing(false);
     onChanged();
