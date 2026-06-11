@@ -693,17 +693,35 @@ export function BudgetContent({
     return [ophelie, joris, ...rest].filter((p): p is Profile => !!p);
   }, [profile, partner, isPersonal, owner]);
 
+  const appliesThisMonth = useCallback(
+    (line: BudgetLine) =>
+      lineAppliesToMonth(
+        line.recurrence,
+        line.start_date ?? line.created_at,
+        month,
+        year
+      ),
+    [month, year]
+  );
+
+  // Une ligne s'affiche si : elle est prévue ce mois-ci (récurrence), OU une
+  // vraie dépense y a été faite ce mois (même catégorie + libellé), OU un
+  // montant prévu a été saisi pour ce mois (override). Ainsi une dépense réelle
+  // hors planning (ex. Nexguard en juin alors qu'il est prévu en juillet) reste
+  // visible, avec un prévu à 0.
   const visibleLines = useMemo(
     () =>
-      lines.filter((line) =>
-        lineAppliesToMonth(
-          line.recurrence,
-          line.start_date ?? line.created_at,
-          month,
-          year
-        )
+      lines.filter(
+        (line) =>
+          appliesThisMonth(line) ||
+          overrides.some((o) => o.budget_line_id === line.id) ||
+          transactions.some(
+            (tx) =>
+              tx.category_id === line.category_id &&
+              normalizeLabel(tx.label) === normalizeLabel(line.label)
+          )
       ),
-    [lines, month, year]
+    [lines, appliesThisMonth, overrides, transactions]
   );
 
   const groups = useMemo(() => {
@@ -731,12 +749,13 @@ export function BudgetContent({
   }, [visibleLines, extraCategoryIds, categories]);
 
   const plannedFor = useCallback(
-    (line: BudgetLine) =>
-      Number(
-        overrides.find((o) => o.budget_line_id === line.id)?.amount_target ??
-          line.amount_target
-      ),
-    [overrides]
+    (line: BudgetLine) => {
+      const override = overrides.find((o) => o.budget_line_id === line.id);
+      if (override) return Number(override.amount_target);
+      // Le montant prévu ne compte que les mois où la récurrence s'applique.
+      return appliesThisMonth(line) ? Number(line.amount_target) : 0;
+    },
+    [overrides, appliesThisMonth]
   );
 
   /**
