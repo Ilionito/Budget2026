@@ -2,13 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getDaysInMonth, isSameMonth, parseISO } from "date-fns";
-import {
-  Repeat,
-  TrendingDown,
-  Users,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { Repeat, TrendingDown, Users } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -25,10 +19,9 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CategoryBreakdown } from "@/components/shared/CategoryBreakdown";
-import { IncomeWidget } from "@/components/shared/IncomeWidget";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { RecentTransactions } from "@/components/shared/RecentTransactions";
-import { supabase } from "@/lib/supabase";
+import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
 import { useAppStore } from "@/lib/store";
 import {
   formatCurrency,
@@ -37,62 +30,15 @@ import {
   monthlyEquivalent,
   resolveColor,
 } from "@/lib/utils";
-import type { MonthlyIncome, Subscription, Transaction } from "@/types";
+import type { Profile, Subscription, Transaction } from "@/types";
+import { KpiCard } from "@/app/dashboard/page";
 
-export const TONES = {
-  emerald: { text: "text-emerald-500", bg: "bg-emerald-500/10" },
-  rose: { text: "text-rose-500", bg: "bg-rose-500/10" },
-  indigo: { text: "text-indigo-400", bg: "bg-indigo-500/10" },
-  purple: { text: "text-purple-400", bg: "bg-purple-500/10" },
-  amber: { text: "text-amber-400", bg: "bg-amber-400/10" },
-} as const;
-
-export function KpiCard({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  icon: LucideIcon;
-  tone: keyof typeof TONES;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium text-zinc-500">{label}</p>
-        <div
-          className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${TONES[tone].bg} ${TONES[tone].text}`}
-        >
-          <Icon className="size-3.5" />
-        </div>
-      </div>
-      <p className={`mt-2 text-xl font-semibold tabular-nums ${TONES[tone].text}`}>
-        {value}
-      </p>
-      <p className="mt-0.5 truncate text-xs text-zinc-600">{sub}</p>
-    </Card>
-  );
-}
-
-function DashboardContent() {
-  const {
-    profile,
-    partner,
-    categories,
-    currentMonth,
-    dataVersion,
-    ready,
-    bumpDataVersion,
-  } = useAppStore();
+function DashboardCommunContent() {
+  const { profile, partner, categories, currentMonth, dataVersion, ready } =
+    useAppStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [income, setIncome] = useState<MonthlyIncome | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  // Catégories du budget commun : servent à distinguer une dépense partagée
-  // d'une dépense purement perso (du partenaire) à exclure du dashboard.
+  // Catégories du budget commun : lignes de budget sans propriétaire.
   const [commonCategoryIds, setCommonCategoryIds] = useState<Set<string>>(
     new Set()
   );
@@ -102,32 +48,23 @@ function DashboardContent() {
     // AppShell garantit un profil non nul quand ready est vrai ;
     // double garde explicite pour ne jamais requêter avec un user nul.
     if (!ready || !profile) return;
-    const userId = profile.id;
     let cancelled = false;
 
     async function load() {
       setLoading(true);
       const { start, end } = getMonthRange(currentMonth);
-      const [txRes, incomeRes, subsRes, commonLinesRes] = await Promise.all([
+      const [txRes, subsRes, commonLinesRes] = await Promise.all([
         supabase
           .from("transactions")
           .select("*")
           .gte("date", start)
           .lte("date", end)
           .order("date", { ascending: false }),
-        supabase
-          .from("monthly_income")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("month", currentMonth.getMonth() + 1)
-          .eq("year", currentMonth.getFullYear())
-          .maybeSingle(),
         supabase.from("subscriptions").select("*").eq("is_active", true),
         supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
       if (cancelled) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
-      setIncome((incomeRes.data as MonthlyIncome | null) ?? null);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
       setCommonCategoryIds(
         new Set(
@@ -145,37 +82,32 @@ function DashboardContent() {
     };
   }, [ready, profile, currentMonth, dataVersion]);
 
-  const me = profile?.id;
-  // Vue personnelle : budget commun (partagé, peu importe qui paie) + MES
-  // dépenses. On exclut les dépenses purement perso du partenaire.
-  const relevant = useMemo(
+  // Seul jeu de transactions de la page : les dépenses sur le budget commun,
+  // peu importe qui paie.
+  const commonTx = useMemo(
     () =>
       transactions.filter(
-        (tx) =>
-          (tx.category_id && commonCategoryIds.has(tx.category_id)) ||
-          tx.user_id === me
+        (tx) => tx.category_id && commonCategoryIds.has(tx.category_id)
       ),
-    [transactions, commonCategoryIds, me]
+    [transactions, commonCategoryIds]
   );
 
-  const mySpend = transactions
-    .filter((tx) => tx.user_id === me)
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const myCount = transactions.filter((tx) => tx.user_id === me).length;
-  // Part du partenaire SUR LE BUDGET COMMUN uniquement (pas ses dépenses perso).
-  const partnerCommon = transactions.filter(
-    (tx) =>
-      tx.user_id !== me &&
-      tx.category_id &&
-      commonCategoryIds.has(tx.category_id)
-  );
-  const partnerSpend = partnerCommon.reduce(
-    (sum, tx) => sum + Number(tx.amount),
-    0
-  );
-  const partnerCount = partnerCommon.length;
-  const net = income ? Number(income.net_transferred) : 0;
-  const balance = net - mySpend;
+  const totalSpend = commonTx.reduce((sum, tx) => sum + Number(tx.amount), 0);
+
+  // Ordre figé : Ophélie puis Joris, comme sur le budget commun.
+  const people = useMemo(() => {
+    const all = [profile, partner].filter((p): p is Profile => p !== null);
+    const ophelie = all.find((p) => p.email === ALLOWED_EMAILS[1]);
+    const joris = all.find((p) => p.email === ALLOWED_EMAILS[0]);
+    const rest = all.filter((p) => p !== ophelie && p !== joris);
+    return [ophelie, joris, ...rest].filter((p): p is Profile => !!p);
+  }, [profile, partner]);
+
+  const personSpend = (personId: string) =>
+    commonTx
+      .filter((tx) => tx.user_id === personId)
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+
   const subsMonthly = subscriptions.reduce(
     (sum, sub) => sum + monthlyEquivalent(Number(sub.amount), sub.frequency),
     0
@@ -187,7 +119,7 @@ function DashboardContent() {
       ? new Date().getDate()
       : getDaysInMonth(currentMonth);
     const byDay = new Array<number>(getDaysInMonth(currentMonth)).fill(0);
-    for (const tx of relevant) {
+    for (const tx of commonTx) {
       const day = parseISO(tx.date).getDate();
       byDay[day - 1] += Number(tx.amount);
     }
@@ -196,13 +128,13 @@ function DashboardContent() {
       cumulative += value;
       return { day: index + 1, total: Math.round(cumulative * 100) / 100 };
     });
-  }, [relevant, currentMonth]);
+  }, [commonTx, currentMonth]);
 
   const pieData = useMemo(() => {
     const rows = categories
       .map((category) => ({
         name: category.label,
-        value: relevant
+        value: commonTx
           .filter((tx) => tx.category_id === category.id)
           .reduce((sum, tx) => sum + Number(tx.amount), 0),
         color: resolveColor(category.color),
@@ -211,19 +143,22 @@ function DashboardContent() {
       .sort((a, b) => b.value - a.value);
     const top = rows.slice(0, 5);
     const rest = rows.slice(5).reduce((sum, row) => sum + row.value, 0);
-    const uncategorized = relevant
+    const uncategorized = commonTx
       .filter((tx) => !tx.category_id)
       .reduce((sum, tx) => sum + Number(tx.amount), 0);
     if (rest + uncategorized > 0) {
       top.push({ name: "Autres", value: rest + uncategorized, color: "#52525b" });
     }
     return top;
-  }, [relevant, categories]);
+  }, [commonTx, categories]);
 
   if (loading) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Dashboard" subtitle={formatMonth(currentMonth)} />
+        <PageHeader
+          title="Dashboard commun"
+          subtitle={`Budget commun · ${formatMonth(currentMonth)}`}
+        />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
@@ -241,36 +176,28 @@ function DashboardContent() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Dashboard"
-        subtitle={`Vue d’ensemble · ${formatMonth(currentMonth)}`}
+        title="Dashboard commun"
+        subtitle={`Budget commun · ${formatMonth(currentMonth)}`}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <KpiCard
-          label="Solde restant"
-          value={formatCurrency(balance)}
-          sub={
-            income
-              ? `sur ${formatCurrency(net)} virés`
-              : "Aucun revenu renseigné"
-          }
-          icon={Wallet}
-          tone={balance >= 0 ? "emerald" : "rose"}
-        />
-        <KpiCard
-          label="Mes dépenses"
-          value={formatCurrency(mySpend)}
-          sub={`${myCount} transaction${myCount > 1 ? "s" : ""}`}
+          label="Dépensé ce mois"
+          value={formatCurrency(totalSpend)}
+          sub={`${commonTx.length} transaction${commonTx.length > 1 ? "s" : ""}`}
           icon={TrendingDown}
           tone="indigo"
         />
-        <KpiCard
-          label={`${partner?.display_name ?? "Partenaire"} · commun`}
-          value={formatCurrency(partnerSpend)}
-          sub={`${partnerCount} sur le budget commun`}
-          icon={Users}
-          tone="purple"
-        />
+        {people.map((person, index) => (
+          <KpiCard
+            key={person.id}
+            label={person.display_name}
+            value={formatCurrency(personSpend(person.id))}
+            sub="sur le budget commun"
+            icon={index === 0 ? TrendingDown : Users}
+            tone={index === 0 ? "indigo" : "purple"}
+          />
+        ))}
         <KpiCard
           label="Abonnements / mois"
           value={formatCurrency(subsMonthly)}
@@ -341,12 +268,11 @@ function DashboardContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={relevant} />
+        <CategoryBreakdown transactions={commonTx} />
         </div>
 
-        {/* Rail droit : revenus, répartition, dernières transactions */}
+        {/* Rail droit : répartition, dernières transactions */}
         <div className="space-y-4">
-        <IncomeWidget income={income} onChanged={bumpDataVersion} />
         <Card>
           <CardTitle>Répartition</CardTitle>
           {pieData.length === 0 ? (
@@ -406,17 +332,17 @@ function DashboardContent() {
             </>
           )}
         </Card>
-        <RecentTransactions transactions={relevant} />
+        <RecentTransactions transactions={commonTx} />
         </div>
       </div>
     </div>
   );
 }
 
-export default function DashboardPage() {
+export default function DashboardCommunPage() {
   return (
     <AppShell wide>
-      <DashboardContent />
+      <DashboardCommunContent />
     </AppShell>
   );
 }

@@ -64,6 +64,7 @@ function buildNavGroups(profile: Profile | null): NavGroup[] {
       id: "commun",
       title: "Commun",
       items: [
+        { id: "c-dashboard", href: "/dashboard/commun", label: "Dashboard", icon: LayoutDashboard },
         { id: "c-budget", href: "/budget", label: "Budget", icon: PiggyBank },
         { id: "c-transactions", href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
         { id: "c-subscriptions", href: "/subscriptions", label: "Abonnements", icon: Repeat },
