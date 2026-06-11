@@ -372,27 +372,17 @@ function SubscriptionsContent() {
     (s) => !s.is_shared && s.user_id !== profile?.id && s.is_active
   );
 
-  // Total foyer : toutes les charges non partagées (chacun son coût plein)
-  // + le coût réel des abonnements communs (2 × la moitié saisie).
-  const householdMonthly =
-    [...mineActive, ...partnerActive].reduce(
-      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
-      0
-    ) +
-    sharedActive.reduce(
-      (sum, s) => sum + 2 * monthlyEquivalent(Number(s.amount), s.frequency),
-      0
-    );
-  // Mes charges : mes abonnements perso (coût plein) + ma moitié des communs.
-  const myMonthly =
-    mineActive.reduce(
-      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
-      0
-    ) +
-    sharedActive.reduce(
-      (sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency),
-      0
-    );
+  // Chacun saisit sa propre part (moitié) d'un abonnement commun, comme une
+  // entrée à part. On additionne donc simplement les montants saisis, sans
+  // jamais doubler.
+  // Total foyer : toutes les charges actives (les deux), au montant saisi.
+  const householdMonthly = subscriptions
+    .filter((s) => s.is_active)
+    .reduce((sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency), 0);
+  // Mes charges : mes abonnements actifs (perso + ma part des communs).
+  const myMonthly = subscriptions
+    .filter((s) => s.is_active && s.user_id === profile?.id)
+    .reduce((sum, s) => sum + monthlyEquivalent(Number(s.amount), s.frequency), 0);
 
   /** Retire du compte les échéances futures non pointées d'un abonnement. */
   async function removeFutureEntries(subscriptionId: string) {

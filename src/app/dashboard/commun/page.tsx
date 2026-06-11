@@ -28,6 +28,7 @@ import {
   formatMonth,
   getMonthRange,
   monthlyEquivalent,
+  normalizeLabel,
   resolveColor,
 } from "@/lib/utils";
 import type { Profile, Subscription, Transaction } from "@/types";
@@ -108,13 +109,16 @@ function DashboardCommunContent() {
       .filter((tx) => tx.user_id === personId)
       .reduce((sum, tx) => sum + Number(tx.amount), 0);
 
-  // Vue commune : uniquement les abonnements partagés, à leur coût réel
-  // (2 × la moitié saisie pour chaque personne).
+  // Vue commune : abonnements partagés. Chacun saisit sa part (moitié) comme
+  // une entrée ; on additionne donc les parts (sans doubler). Le compteur
+  // dédoublonne par libellé (les 2 parts de « Lassie » = 1 abonnement commun).
   const sharedSubs = subscriptions.filter((sub) => sub.is_shared);
   const subsMonthly = sharedSubs.reduce(
-    (sum, sub) => sum + 2 * monthlyEquivalent(Number(sub.amount), sub.frequency),
+    (sum, sub) => sum + monthlyEquivalent(Number(sub.amount), sub.frequency),
     0
   );
+  const sharedCount = new Set(sharedSubs.map((s) => normalizeLabel(s.label)))
+    .size;
 
   const chartData = useMemo(() => {
     const isThisMonth = isSameMonth(currentMonth, new Date());
@@ -204,7 +208,7 @@ function DashboardCommunContent() {
         <KpiCard
           label="Abonnements / mois"
           value={formatCurrency(subsMonthly)}
-          sub={`${sharedSubs.length} commun${sharedSubs.length > 1 ? "s" : ""}`}
+          sub={`${sharedCount} commun${sharedCount > 1 ? "s" : ""}`}
           icon={Repeat}
           tone="amber"
         />

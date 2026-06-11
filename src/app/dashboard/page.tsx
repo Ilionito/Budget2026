@@ -132,11 +132,9 @@ function DashboardContent() {
   const partnerCount = partnerCommon.length;
   const net = income ? Number(income.net_transferred) : 0;
   const balance = net - mySpend;
-  // Vue personnelle : mes abonnements perso (coût plein) + ma moitié des
-  // abonnements communs (le montant saisi représente déjà une part).
-  const mySubs = subscriptions.filter(
-    (sub) => sub.is_shared || sub.user_id === me
-  );
+  // Vue personnelle : MES abonnements (chacun saisit sa propre part d'un
+  // abonnement commun, donc ma part = ma propre entrée).
+  const mySubs = subscriptions.filter((sub) => sub.user_id === me);
   const subsMonthly = mySubs.reduce(
     (sum, sub) => sum + monthlyEquivalent(Number(sub.amount), sub.frequency),
     0
