@@ -31,6 +31,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AddTransactionSheet } from "@/components/shared/AddTransactionSheet";
+import { ThemeApplier } from "@/components/shared/ThemeApplier";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase, DEFAULT_NAMES, ALLOWED_EMAILS } from "@/lib/supabase";
@@ -303,6 +304,7 @@ export function AppShell({
 
   return (
     <div className="min-h-dvh">
+      <ThemeApplier />
       {/* Sidebar desktop */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[260px] flex-col border-r border-zinc-800/60 bg-zinc-950 md:flex">
         <div className="px-5 pb-4 pt-6">

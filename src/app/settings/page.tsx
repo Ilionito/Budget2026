@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Download, Loader2, LogOut } from "lucide-react";
+import { Check, Download, Loader2, LogOut, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -15,6 +15,7 @@ import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase } from "@/lib/supabase";
 import { useAppStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { DEFAULT_THEME, THEME_TOKENS } from "@/lib/theme";
 import { AVATAR_COLORS, type Transaction } from "@/types";
 
 function csvEscape(value: string): string {
@@ -31,11 +32,18 @@ function SettingsContent() {
   const [color, setColor] = useState(profile?.avatar_color ?? AVATAR_COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [themeDraft, setThemeDraft] = useState<Record<string, string>>(() => ({
+    ...DEFAULT_THEME,
+    ...(profile?.theme ?? {}),
+  }));
+  const [savingTheme, setSavingTheme] = useState(false);
+  const [resettingTheme, setResettingTheme] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setName(profile.display_name);
       setColor(profile.avatar_color);
+      setThemeDraft({ ...DEFAULT_THEME, ...(profile.theme ?? {}) });
     }
   }, [profile]);
 
@@ -57,6 +65,39 @@ function SettingsContent() {
     }
     setProfile({ ...profile, display_name: name.trim(), avatar_color: color });
     toast.success("Profil mis à jour");
+  }
+
+  async function handleSaveTheme() {
+    if (!profile) return;
+    setSavingTheme(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ theme: themeDraft })
+      .eq("id", profile.id);
+    setSavingTheme(false);
+    if (error) {
+      toast.error("Impossible d'enregistrer les couleurs");
+      return;
+    }
+    setProfile({ ...profile, theme: themeDraft });
+    toast.success("Couleurs mises à jour");
+  }
+
+  async function handleResetTheme() {
+    if (!profile) return;
+    setResettingTheme(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ theme: null })
+      .eq("id", profile.id);
+    setResettingTheme(false);
+    if (error) {
+      toast.error("Réinitialisation impossible");
+      return;
+    }
+    setProfile({ ...profile, theme: null });
+    setThemeDraft({ ...DEFAULT_THEME });
+    toast.success("Couleurs réinitialisées");
   }
 
   async function handleExport() {
@@ -157,6 +198,60 @@ function SettingsContent() {
               Enregistrer
             </Button>
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Couleurs / Apparence</CardTitle>
+        <p className="mt-2 text-sm text-zinc-500">
+          Personnalise les couleurs de l&rsquo;application. Les changements
+          s&rsquo;appliquent à l&rsquo;ensemble de l&rsquo;app après
+          enregistrement.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {THEME_TOKENS.map((token) => {
+            const value = themeDraft[token.key] ?? DEFAULT_THEME[token.key];
+            return (
+              <div key={token.key} className="flex items-center gap-3">
+                <span
+                  className="size-8 shrink-0 rounded-lg border border-zinc-800/60"
+                  style={{ backgroundColor: value }}
+                  aria-hidden
+                />
+                <Label htmlFor={`theme-${token.key}`} className="flex-1">
+                  {token.label}
+                </Label>
+                <input
+                  id={`theme-${token.key}`}
+                  type="color"
+                  value={value}
+                  onChange={(e) =>
+                    setThemeDraft((d) => ({ ...d, [token.key]: e.target.value }))
+                  }
+                  className="size-8 cursor-pointer rounded-lg border border-zinc-800/60 bg-transparent"
+                  aria-label={token.label}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={handleSaveTheme} disabled={savingTheme}>
+            {savingTheme ? <Loader2 className="animate-spin" /> : <Check />}
+            Enregistrer
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={handleResetTheme}
+            disabled={resettingTheme}
+          >
+            {resettingTheme ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RotateCcw />
+            )}
+            Réinitialiser
+          </Button>
         </div>
       </Card>
 

@@ -9,6 +9,9 @@
 
 :root {
   color-scheme: dark;
+
+  /* Couleur par défaut des graphiques recharts (surchargeable via le thème). */
+  --chart: #6366f1;
 }
 
 /* ─── Mode clair ─────────────────────────────────────────────────────────────

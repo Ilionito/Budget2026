@@ -6,6 +6,7 @@ export interface Profile {
   email: string;
   display_name: string;
   avatar_color: string;
+  theme?: Record<string, string> | null;
 }
 
 export interface Category {
