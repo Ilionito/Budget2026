@@ -1,4 +1,4 @@
-export type Frequency = "monthly" | "yearly" | "weekly";
+export type Frequency = "monthly" | "yearly" | "weekly" | "every_4_weeks";
 export type EnvelopeKey = "fixed" | "leisure" | "savings" | "unexpected";
 
 export interface Profile {
@@ -85,6 +85,7 @@ export interface BudgetLine {
   category_id: string;
   amount_target: number;
   recurrence: Recurrence;
+  start_date: string | null;
   created_by: string;
   created_at: string;
   category?: Category;
@@ -229,12 +230,14 @@ export const FREQUENCIES: { value: Frequency; label: string }[] = [
   { value: "monthly", label: "Mensuel" },
   { value: "yearly", label: "Annuel" },
   { value: "weekly", label: "Hebdomadaire" },
+  { value: "every_4_weeks", label: "Toutes les 4 semaines" },
 ];
 
 export const FREQUENCY_SUFFIX: Record<Frequency, string> = {
   monthly: "/mois",
   yearly: "/an",
   weekly: "/sem.",
+  every_4_weeks: "/4 sem.",
 };
 
 export interface LedgerEntry {

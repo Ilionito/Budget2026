@@ -8,6 +8,7 @@ const HORIZON_MONTHS = 12;
 function step(date: Date, frequency: Frequency): Date {
   if (frequency === "yearly") return addYears(date, 1);
   if (frequency === "weekly") return addWeeks(date, 1);
+  if (frequency === "every_4_weeks") return addWeeks(date, 4);
   return addMonths(date, 1);
 }
 

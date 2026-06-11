@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -173,6 +174,7 @@ function EditLineDialog({
   const [categoryId, setCategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [recurrence, setRecurrence] = useState<Recurrence>("monthly");
+  const [startDate, setStartDate] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -181,6 +183,9 @@ function EditLineDialog({
       setCategoryId(line.category_id);
       setAmount(formatAmountValue(Number(line.amount_target)));
       setRecurrence(line.recurrence);
+      setStartDate(
+        format(new Date(line.start_date ?? line.created_at), "yyyy-MM-dd")
+      );
     }
   }, [line]);
 
@@ -208,6 +213,7 @@ function EditLineDialog({
         category_id: categoryId,
         amount_target: parsed,
         recurrence,
+        start_date: recurrence === "monthly" ? null : startDate || null,
       })
       .eq("id", line.id);
     setSaving(false);
@@ -304,6 +310,18 @@ function EditLineDialog({
               </Select>
             </div>
           </div>
+
+          {recurrence !== "monthly" && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-start">Début</Label>
+              <DatePicker
+                id="edit-start"
+                value={startDate}
+                onChange={setStartDate}
+              />
+              <p className="text-xs text-zinc-600">1re échéance</p>
+            </div>
+          )}
 
           <Button type="submit" disabled={saving} className="w-full">
             {saving ? <Loader2 className="animate-spin" /> : null}
@@ -627,7 +645,12 @@ export function BudgetContent({
   const visibleLines = useMemo(
     () =>
       lines.filter((line) =>
-        lineAppliesToMonth(line.recurrence, line.created_at, month, year)
+        lineAppliesToMonth(
+          line.recurrence,
+          line.start_date ?? line.created_at,
+          month,
+          year
+        )
       ),
     [lines, month, year]
   );

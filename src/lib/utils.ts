@@ -54,6 +54,7 @@ export function getInitials(name: string): string {
 export function monthlyEquivalent(amount: number, frequency: Frequency): number {
   if (frequency === "yearly") return amount / 12;
   if (frequency === "weekly") return amount * 4.33;
+  if (frequency === "every_4_weeks") return (amount * 13) / 12;
   return amount;
 }
 
