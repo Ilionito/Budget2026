@@ -152,6 +152,8 @@ function DashboardContent() {
   const plannedByCategory = useMemo(() => {
     const map = new Map<string, number>();
     for (const line of lines) {
+      // Sur le dashboard perso, on ne suit que MON budget perso.
+      if (line.owner_id !== me) continue;
       const override = overrides.find((o) => o.budget_line_id === line.id);
       const amount = override
         ? Number(override.amount_target)
@@ -166,7 +168,7 @@ function DashboardContent() {
       map.set(line.category_id, (map.get(line.category_id) ?? 0) + amount);
     }
     return map;
-  }, [lines, overrides, month, year]);
+  }, [lines, overrides, month, year, me]);
 
   const totalPlanned = useMemo(
     () => Array.from(plannedByCategory.values()).reduce((s, v) => s + v, 0),
@@ -175,18 +177,23 @@ function DashboardContent() {
 
   // Vue personnelle : budget commun (partagé, peu importe qui paie) + MES
   // dépenses. On exclut les dépenses purement perso du partenaire.
+  // Vue personnelle : UNIQUEMENT mes dépenses (ma part du commun + mon perso).
+  // On n'inclut jamais les dépenses du partenaire.
   const relevant = useMemo(
-    () =>
-      transactions.filter(
-        (tx) =>
-          (tx.category_id && commonCategoryIds.has(tx.category_id)) ||
-          tx.user_id === me
-      ),
-    [transactions, commonCategoryIds, me]
+    () => transactions.filter((tx) => tx.user_id === me),
+    [transactions, me]
   );
 
-  const relevantSpent = relevant.reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const withinBudget = relevantSpent <= totalPlanned;
+  // Suivi du budget perso : mes dépenses dans MES catégories perso (celles qui
+  // ont une ligne de budget perso) comparées à mon budget perso.
+  const personalCatIds = useMemo(
+    () => new Set(lines.filter((l) => l.owner_id === me).map((l) => l.category_id)),
+    [lines, me]
+  );
+  const personalSpent = relevant
+    .filter((tx) => tx.category_id && personalCatIds.has(tx.category_id))
+    .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const withinBudget = personalSpent <= totalPlanned;
 
   const mySpend = transactions
     .filter((tx) => tx.user_id === me)
@@ -284,22 +291,22 @@ function DashboardContent() {
           value={
             totalPlanned > 0 ? (
               <>
-                {formatCurrency(relevantSpent)}
+                {formatCurrency(personalSpent)}
                 <span className="text-zinc-300">
                   {" "}
                   / {formatCurrency(totalPlanned)}
                 </span>
               </>
             ) : (
-              formatCurrency(relevantSpent)
+              formatCurrency(personalSpent)
             )
           }
           sub={
             totalPlanned === 0
               ? "Aucun budget défini"
               : withinBudget
-              ? `${formatCurrency(totalPlanned - relevantSpent)} restants`
-              : `${formatCurrency(relevantSpent - totalPlanned)} de dépassement`
+              ? `${formatCurrency(totalPlanned - personalSpent)} restants`
+              : `${formatCurrency(personalSpent - totalPlanned)} de dépassement`
           }
           icon={TrendingDown}
           tone={
