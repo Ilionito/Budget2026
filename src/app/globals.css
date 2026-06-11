@@ -1,0 +1,85 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-inter);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+/* ─── Mode clair ─────────────────────────────────────────────────────────────
+   Toute l'app est écrite avec l'échelle zinc « dark ». Tailwind v4 compile les
+   classes vers var(--color-*) : il suffit d'inverser l'échelle ici pour que
+   chaque composant bascule sans être réécrit. Les accents 300/400 sont
+   assombris (600/700) pour garder le contraste sur fond clair. */
+html:not(.dark) {
+  color-scheme: light;
+
+  /* Échelle zinc inversée */
+  --color-zinc-950: #fafafa; /* fond de page */
+  --color-zinc-900: #ffffff; /* cartes, en-têtes de tableaux */
+  --color-zinc-800: #e4e4e7; /* bordures, hovers */
+  --color-zinc-700: #a1a1aa; /* placeholders « — », track des switchs */
+  --color-zinc-600: #71717a; /* texte atténué */
+  --color-zinc-500: #52525b;
+  --color-zinc-400: #3f3f46;
+  --color-zinc-300: #27272a;
+  --color-zinc-200: #18181b; /* texte courant */
+  --color-zinc-100: #09090b;
+  --color-zinc-50: #09090b;
+
+  /* text-white = texte à contraste maximal (titres) → noir en mode clair.
+     Les blancs qui doivent rester blancs (boutons indigo, avatars, switch)
+     utilisent des littéraux [#fff]. */
+  --color-white: #09090b;
+
+  /* Accents assombris pour le contraste */
+  --color-indigo-300: #4338ca;
+  --color-indigo-400: #4f46e5;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+}
+
+/* Graphiques recharts : les couleurs sont des hex codés en dur côté JSX
+   (attributs SVG + styles inline des tooltips) → overrides CSS en mode clair. */
+html:not(.dark) .recharts-cartesian-grid line {
+  stroke: #e4e4e7;
+}
+html:not(.dark) .recharts-text,
+html:not(.dark) .recharts-cartesian-axis-tick-value {
+  fill: #52525b;
+}
+html:not(.dark) .recharts-tooltip-cursor {
+  stroke: #d4d4d8;
+}
+html:not(.dark) .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border-color: #e4e4e7 !important;
+  color: #18181b !important;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  background-color: var(--color-zinc-950);
+  color: var(--color-zinc-200);
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-indigo-500) 35%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-zinc-800) transparent;
+}
