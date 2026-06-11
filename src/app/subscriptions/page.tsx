@@ -6,6 +6,7 @@ import {
   CalendarClock,
   Loader2,
   Lock,
+  Pencil,
   Plus,
   Power,
   Repeat,
@@ -54,14 +55,14 @@ import {
 
 function SubscriptionRow({
   subscription,
-  mine,
   onToggle,
   onDelete,
+  onEdit,
 }: {
   subscription: Subscription;
-  mine: boolean;
   onToggle?: () => void;
   onDelete?: () => void;
+  onEdit?: () => void;
 }) {
   const { categories } = useAppStore();
   const category =
@@ -117,28 +118,35 @@ function SubscriptionRow({
           </p>
         )}
       </div>
-      {mine && (
-        <div className="flex shrink-0 gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 text-zinc-600 hover:text-amber-400"
-            onClick={onToggle}
-            aria-label={subscription.is_active ? "Suspendre" : "Réactiver"}
-          >
-            <Power className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 text-zinc-600 hover:text-rose-400"
-            onClick={onDelete}
-            aria-label="Supprimer"
-          >
-            <Trash2 className="size-4" />
-          </Button>
-        </div>
-      )}
+      <div className="flex shrink-0 gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-zinc-600 hover:text-indigo-400"
+          onClick={onEdit}
+          aria-label="Modifier"
+        >
+          <Pencil className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-zinc-600 hover:text-amber-400"
+          onClick={onToggle}
+          aria-label={subscription.is_active ? "Suspendre" : "Réactiver"}
+        >
+          <Power className="size-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8 text-zinc-600 hover:text-rose-400"
+          onClick={onDelete}
+          aria-label="Supprimer"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -147,12 +155,19 @@ function AddSubscriptionDialog({
   open,
   onOpenChange,
   onSaved,
+  subscription,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
+  subscription?: Subscription | null;
 }) {
-  const { profile, categories } = useAppStore();
+  const { profile, partner, categories } = useAppStore();
+  const isEdit = !!subscription;
+  // Personnes proposées dans « Pour qui ? » (le partenaire peut être absent).
+  const people = [profile, partner].filter(
+    (p): p is NonNullable<typeof p> => p !== null
+  );
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [frequency, setFrequency] = useState<Frequency>("monthly");
@@ -160,10 +175,21 @@ function AddSubscriptionDialog({
   const [nextDate, setNextDate] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [isShared, setIsShared] = useState(false);
+  const [forUserId, setForUserId] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (subscription) {
+      setLabel(subscription.label);
+      setAmount(String(subscription.amount));
+      setFrequency(subscription.frequency);
+      setCategoryId(subscription.category_id ?? "");
+      setNextDate(subscription.next_date ?? "");
+      setIsPrivate(subscription.is_private);
+      setIsShared(subscription.is_shared);
+      setForUserId(subscription.user_id);
+    } else {
       setLabel("");
       setAmount("");
       setFrequency("monthly");
@@ -171,8 +197,9 @@ function AddSubscriptionDialog({
       setNextDate(format(new Date(), "yyyy-MM-dd"));
       setIsPrivate(false);
       setIsShared(false);
+      setForUserId(profile?.id ?? "");
     }
-  }, [open]);
+  }, [open, subscription, profile?.id]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -191,24 +218,35 @@ function AddSubscriptionDialog({
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("subscriptions").insert({
-      user_id: profile.id,
+    const payload = {
+      user_id: forUserId || profile.id,
       label: label.trim(),
       amount: Math.round(parsed * 100) / 100,
       frequency,
       category_id: categoryId,
       next_date: nextDate || null,
-      is_active: true,
       // Un abonnement commun est visible par les deux : on force le privé à faux.
       is_private: isShared ? false : isPrivate,
       is_shared: isShared,
-    });
+    };
+    const { error } = subscription
+      ? await supabase
+          .from("subscriptions")
+          .update(payload)
+          .eq("id", subscription.id)
+      : await supabase
+          .from("subscriptions")
+          .insert({ ...payload, is_active: true });
     setSaving(false);
     if (error) {
-      toast.error("Impossible d'ajouter l'abonnement");
+      toast.error(
+        isEdit
+          ? "Impossible de modifier l'abonnement"
+          : "Impossible d'ajouter l'abonnement"
+      );
       return;
     }
-    toast.success("Abonnement ajouté");
+    toast.success(isEdit ? "Abonnement modifié" : "Abonnement ajouté");
     onOpenChange(false);
     onSaved();
   }
@@ -218,11 +256,31 @@ function AddSubscriptionDialog({
       <DialogContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>Nouvel abonnement</DialogTitle>
+            <DialogTitle>
+              {isEdit ? "Modifier l'abonnement" : "Nouvel abonnement"}
+            </DialogTitle>
             <DialogDescription>
               Netflix, salle de sport, assurance…
             </DialogDescription>
           </DialogHeader>
+
+          {people.length > 1 && (
+            <div className="grid gap-1.5">
+              <Label>Pour qui ?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {people.map((person) => (
+                  <Button
+                    key={person.id}
+                    type="button"
+                    variant={forUserId === person.id ? "default" : "outline"}
+                    onClick={() => setForUserId(person.id)}
+                  >
+                    {person.display_name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-1.5">
             <Label htmlFor="sub-label">Libellé</Label>
@@ -330,8 +388,14 @@ function AddSubscriptionDialog({
           </div>
 
           <Button type="submit" disabled={saving} className="w-full">
-            {saving ? <Loader2 className="animate-spin" /> : <Plus />}
-            Ajouter l&rsquo;abonnement
+            {saving ? (
+              <Loader2 className="animate-spin" />
+            ) : isEdit ? (
+              <Pencil />
+            ) : (
+              <Plus />
+            )}
+            {isEdit ? "Enregistrer" : "Ajouter l’abonnement"}
           </Button>
         </form>
       </DialogContent>
@@ -345,6 +409,7 @@ function SubscriptionsContent() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -487,9 +552,9 @@ function SubscriptionsContent() {
               <SubscriptionRow
                 key={s.id}
                 subscription={s}
-                mine
                 onToggle={() => handleToggle(s)}
                 onDelete={() => handleDelete(s)}
+                onEdit={() => setEditingSub(s)}
               />
             ))}
           </div>
@@ -511,9 +576,9 @@ function SubscriptionsContent() {
               <SubscriptionRow
                 key={s.id}
                 subscription={s}
-                mine
                 onToggle={() => handleToggle(s)}
                 onDelete={() => handleDelete(s)}
+                onEdit={() => setEditingSub(s)}
               />
             ))}
           </div>
@@ -534,7 +599,13 @@ function SubscriptionsContent() {
         ) : (
           <div className="mt-2">
             {partnerActive.map((s) => (
-              <SubscriptionRow key={s.id} subscription={s} mine={false} />
+              <SubscriptionRow
+                key={s.id}
+                subscription={s}
+                onToggle={() => handleToggle(s)}
+                onDelete={() => handleDelete(s)}
+                onEdit={() => setEditingSub(s)}
+              />
             ))}
           </div>
         )}
@@ -548,9 +619,9 @@ function SubscriptionsContent() {
               <SubscriptionRow
                 key={s.id}
                 subscription={s}
-                mine
                 onToggle={() => handleToggle(s)}
                 onDelete={() => handleDelete(s)}
+                onEdit={() => setEditingSub(s)}
               />
             ))}
           </div>
@@ -559,8 +630,14 @@ function SubscriptionsContent() {
       </div>
 
       <AddSubscriptionDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
+        open={addOpen || editingSub !== null}
+        subscription={editingSub}
+        onOpenChange={(value) => {
+          if (!value) {
+            setAddOpen(false);
+            setEditingSub(null);
+          }
+        }}
         onSaved={bumpDataVersion}
       />
     </div>
