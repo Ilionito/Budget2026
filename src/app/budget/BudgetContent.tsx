@@ -555,6 +555,23 @@ export function BudgetContent({
     load();
   }, [ready, profile, dataVersion, load, isPersonal, owner]);
 
+  // Resynchronise au retour sur l'onglet / la fenêtre : évite d'afficher des
+  // données périmées si une modif a été faite ailleurs (ex. suppression d'une
+  // transaction dans un autre onglet). Rechargement silencieux (pas de skeleton).
+  useEffect(() => {
+    if (!ready || !profile) return;
+    if (isPersonal && !owner) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, profile, isPersonal, owner, load]);
+
   // Seed initial : si la table budget_lines est vide, créer les lignes par défaut.
   // Réservé au budget commun ; les budgets personnels démarrent vides.
   useEffect(() => {
