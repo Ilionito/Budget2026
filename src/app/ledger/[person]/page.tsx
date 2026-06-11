@@ -395,10 +395,6 @@ export default function LedgerPage({
         ),
     [entries, today]
   );
-  const checkedCount = useMemo(
-    () => entries.filter((e) => e.is_checked && e.date <= today).length,
-    [entries, today]
-  );
 
   // ── Catégories ─────────────────────────────────────────────────────────────
 
@@ -1228,19 +1224,6 @@ export default function LedgerPage({
             ? "text-indigo-300"
             : "text-zinc-400",
     },
-    {
-      label: "Solde pointé",
-      value: checkedBalance,
-      prefix: checkedBalance < 0 ? "−" : "",
-      sub: `${checkedCount} écriture${checkedCount !== 1 ? "s" : ""} pointée${checkedCount !== 1 ? "s" : ""}`,
-      color:
-        checkedBalance < 0
-          ? "text-rose-400"
-          : checkedBalance > 0
-            ? "text-indigo-400"
-            : "text-zinc-400",
-      editable: isOwner,
-    },
   ];
 
   const annualSummaryCards: SummaryCard[] = [
@@ -1285,9 +1268,7 @@ export default function LedgerPage({
   ];
 
   const summaryCards = isAnnualView ? annualSummaryCards : monthlySummaryCards;
-  const gridCols = isAnnualView
-    ? "grid-cols-2 gap-3 lg:grid-cols-4"
-    : "grid-cols-2 gap-3 lg:grid-cols-5";
+  const gridCols = "grid-cols-2 gap-3 lg:grid-cols-4";
 
   // ── Main render ───────────────────────────────────────────────────────────
 
