@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDaysInMonth, isSameMonth, parseISO } from "date-fns";
 import { Repeat, TrendingDown, Users } from "lucide-react";
 import {
@@ -44,15 +44,13 @@ function DashboardCommunContent() {
     new Set()
   );
   const [loading, setLoading] = useState(true);
+  const loadIdRef = useRef(0);
 
-  useEffect(() => {
-    // AppShell garantit un profil non nul quand ready est vrai ;
-    // double garde explicite pour ne jamais requêter avec un user nul.
-    if (!ready || !profile) return;
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!ready || !profile) return;
+      const id = ++loadIdRef.current;
+      if (!silent) setLoading(true);
       const { start, end } = getMonthRange(currentMonth);
       const [txRes, subsRes, commonLinesRes] = await Promise.all([
         supabase
@@ -64,7 +62,8 @@ function DashboardCommunContent() {
         supabase.from("subscriptions").select("*").eq("is_active", true),
         supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
-      if (cancelled) return;
+      // Ignore le résultat si une requête plus récente a été lancée entre-temps.
+      if (id !== loadIdRef.current) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
       setCommonCategoryIds(
@@ -75,13 +74,28 @@ function DashboardCommunContent() {
         )
       );
       setLoading(false);
-    }
+    },
+    [ready, profile, currentMonth]
+  );
 
+  useEffect(() => {
     load();
-    return () => {
-      cancelled = true;
+  }, [load, dataVersion]);
+
+  // Resync au retour sur l'onglet / la fenêtre (silencieux, pas de skeleton).
+  useEffect(() => {
+    if (!ready || !profile) return;
+    const onFocus = () => load(true);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load(true);
     };
-  }, [ready, profile, currentMonth, dataVersion]);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, profile, load]);
 
   // Seul jeu de transactions de la page : les dépenses sur le budget commun,
   // peu importe qui paie.

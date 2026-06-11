@@ -168,7 +168,7 @@ function TransactionsContent() {
           </div>
         </Card>
       ) : (
-        <div className="grid items-start gap-3 xl:grid-cols-2">
+        <div className="mx-auto max-w-2xl space-y-3">
           {groups.map((group) => (
             <Card key={group.date} className="p-3">
               <div className="flex items-center justify-between px-2 pb-2 pt-1">

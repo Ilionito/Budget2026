@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDaysInMonth, isSameMonth, parseISO } from "date-fns";
 import { Repeat, TrendingDown, Users, Wallet } from "lucide-react";
 import {
@@ -53,16 +53,14 @@ function DashboardContent() {
     new Set()
   );
   const [loading, setLoading] = useState(true);
+  const loadIdRef = useRef(0);
 
-  useEffect(() => {
-    // AppShell garantit un profil non nul quand ready est vrai ;
-    // double garde explicite pour ne jamais requêter avec un user nul.
-    if (!ready || !profile) return;
-    const userId = profile.id;
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!ready || !profile) return;
+      const id = ++loadIdRef.current;
+      if (!silent) setLoading(true);
+      const userId = profile.id;
       const { start, end } = getMonthRange(currentMonth);
       const [txRes, incomeRes, subsRes, commonLinesRes] = await Promise.all([
         supabase
@@ -81,7 +79,8 @@ function DashboardContent() {
         supabase.from("subscriptions").select("*").eq("is_active", true),
         supabase.from("budget_lines").select("category_id").is("owner_id", null),
       ]);
-      if (cancelled) return;
+      // Ignore le résultat si une requête plus récente a été lancée entre-temps.
+      if (id !== loadIdRef.current) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
       setIncome((incomeRes.data as MonthlyIncome | null) ?? null);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
@@ -93,13 +92,29 @@ function DashboardContent() {
         )
       );
       setLoading(false);
-    }
+    },
+    [ready, profile, currentMonth]
+  );
 
+  useEffect(() => {
     load();
-    return () => {
-      cancelled = true;
+  }, [load, dataVersion]);
+
+  // Resync au retour sur l'onglet / la fenêtre (silencieux, pas de skeleton) :
+  // une suppression faite ailleurs (autre onglet) se reflète automatiquement.
+  useEffect(() => {
+    if (!ready || !profile) return;
+    const onFocus = () => load(true);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load(true);
     };
-  }, [ready, profile, currentMonth, dataVersion]);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, profile, load]);
 
   const me = profile?.id;
   // Vue personnelle : budget commun (partagé, peu importe qui paie) + MES
