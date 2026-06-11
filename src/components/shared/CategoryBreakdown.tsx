@@ -10,22 +10,32 @@ import type { Transaction } from "@/types";
 
 export function CategoryBreakdown({
   transactions,
+  categoryIds,
 }: {
   transactions: Transaction[];
+  /** Si fourni, limite l'affichage aux catégories de cet ensemble. */
+  categoryIds?: Set<string>;
 }) {
   const { categories } = useAppStore();
 
   const total = transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
 
-  const rows = categories
+  // Toutes les catégories (du périmètre) sont affichées, même à 0 €.
+  const shown = categoryIds
+    ? categories.filter((c) => categoryIds.has(c.id))
+    : categories;
+
+  const rows = shown
     .map((category) => ({
       category,
       amount: transactions
         .filter((tx) => tx.category_id === category.id)
         .reduce((sum, tx) => sum + Number(tx.amount), 0),
     }))
-    .filter((row) => row.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
+    .sort(
+      (a, b) =>
+        b.amount - a.amount || a.category.label.localeCompare(b.category.label)
+    );
 
   const uncategorized = transactions
     .filter((tx) => !tx.category_id)
@@ -34,15 +44,15 @@ export function CategoryBreakdown({
   return (
     <Card className="h-full">
       <CardTitle>Par catégorie</CardTitle>
-      {total === 0 ? (
+      {shown.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-10 text-center">
           <PieChart className="size-6 text-zinc-700" />
-          <p className="text-sm text-zinc-600">Aucune dépense ce mois-ci</p>
+          <p className="text-sm text-zinc-600">Aucune catégorie</p>
         </div>
       ) : (
         <div className="mt-4 space-y-4">
           {rows.map(({ category, amount }) => {
-            const pct = (amount / total) * 100;
+            const pct = total > 0 ? (amount / total) * 100 : 0;
             const color = resolveColor(category.color);
             return (
               <div key={category.id} className="space-y-1.5">

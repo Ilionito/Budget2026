@@ -275,7 +275,7 @@ function DashboardCommunContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={commonTx} />
+        <CategoryBreakdown transactions={commonTx} categoryIds={commonCategoryIds} />
         </div>
 
         {/* Rail droit : répartition, dernières transactions */}
