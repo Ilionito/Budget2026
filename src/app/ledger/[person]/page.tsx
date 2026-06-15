@@ -274,12 +274,54 @@ export default function LedgerPage({
   const monthStartStr = useMemo(() => mStart(year, activeMonth), [year, activeMonth]);
   const monthEndStr = useMemo(() => mEnd(year, activeMonth), [year, activeMonth]);
 
+  // ── Solde réel daté = point d'ancrage du solde ─────────────────────────────
+  // Quand un solde réel daté existe (carte « Solde réel »), le solde calculé est
+  // recalé pour retomber EXACTEMENT sur cette valeur à sa date, au lieu de
+  // chaîner une clôture calculée qui dérive de mois en mois. On applique un
+  // décalage constant K = soldeRéel − (cumul BRUT jusqu'à la date d'ancrage),
+  // à partir du mois qui contient l'ancre (et les mois suivants). Le cumul
+  // compte toutes les opérations dont la date ≤ ancre (pointées ou non).
+  const anchorDate = targetProfile?.real_balance_at ?? null;
+  const anchorAmount =
+    targetProfile?.real_balance != null
+      ? Number(targetProfile.real_balance)
+      : null;
+  const hasAnchor = anchorDate != null && anchorAmount != null;
+
+  const anchorOffset = useMemo(() => {
+    if (!hasAnchor || anchorDate == null || anchorAmount == null) return 0;
+    const soldeAtAnchor = entries
+      .filter((e) => e.date <= anchorDate)
+      .reduce(
+        (s, e) =>
+          s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
+        0
+      );
+    return anchorAmount - soldeAtAnchor;
+  }, [hasAnchor, anchorDate, anchorAmount, entries]);
+
+  /** Décalage d'ancrage pour un solde arrêté à `cutoffExclusive` (1er jour du
+   *  mois suivant) : actif dès que l'ancre est antérieure à cette borne, donc à
+   *  partir du mois qui contient l'ancre. Avant l'ancre → 0 (comportement
+   *  inchangé). */
+  const anchorAdjustment = useCallback(
+    (cutoffExclusive: string) =>
+      hasAnchor && anchorDate != null && anchorDate < cutoffExclusive
+        ? anchorOffset
+        : 0,
+    [hasAnchor, anchorDate, anchorOffset]
+  );
+
   const carryForward = useMemo(
     () =>
       entries
         .filter((e) => e.date < monthStartStr)
-        .reduce((s, e) => s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)), 0),
-    [entries, monthStartStr]
+        .reduce(
+          (s, e) =>
+            s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
+          0
+        ) + anchorAdjustment(monthEndStr),
+    [entries, monthStartStr, monthEndStr, anchorAdjustment]
   );
 
   const hasPreviousEntries = useMemo(
@@ -339,13 +381,15 @@ export default function LedgerPage({
         const expense = mEntries
           .filter((e) => e.type === "expense")
           .reduce((s, e) => s + Number(e.amount), 0);
-        const balanceAtEnd = entries
-          .filter((e) => e.date < me)
-          .reduce(
-            (s, e) =>
-              s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
-            0
-          );
+        const balanceAtEnd =
+          entries
+            .filter((e) => e.date < me)
+            .reduce(
+              (s, e) =>
+                s +
+                (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
+              0
+            ) + anchorAdjustment(me);
         return {
           monthIndex: m,
           income,
@@ -357,7 +401,7 @@ export default function LedgerPage({
           isCurrentMonth: ms <= today && today < me,
         };
       }),
-    [entries, year, today]
+    [entries, year, today, anchorAdjustment]
   );
 
   const yearIncome = useMemo(
@@ -377,8 +421,11 @@ export default function LedgerPage({
         .reduce(
           (s, e) => s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
           0
-        ),
-    [entries, today]
+        ) +
+      anchorAdjustment(
+        mEnd(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1)
+      ),
+    [entries, today, anchorAdjustment]
   );
 
   const chartData = useMemo(
@@ -1677,7 +1724,7 @@ export default function LedgerPage({
               </thead>
               <tbody className="divide-y divide-zinc-800/30">
                 {/* Carry-forward row */}
-                {hasPreviousEntries && (
+                {(hasPreviousEntries || Math.abs(carryForward) > 0.005) && (
                   <tr className="bg-zinc-800/20">
                     <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-zinc-600">
                       01/
