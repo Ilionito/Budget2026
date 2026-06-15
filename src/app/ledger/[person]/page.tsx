@@ -694,6 +694,8 @@ export default function LedgerPage({
     if (wantsBudget && parsed.type === "expense") {
       await ensurePersonalBudgetLine(targetProfile.id, addRow.categoryId, label);
     }
+    // Le solde réel baisse (sortie) / monte (entrée) automatiquement à l'ajout.
+    await applyAddToRealBalance(addRow.date, parsed.type, amount);
     setSaving(false);
     if (wantsBudget) bumpDataVersion();
     const ms = mStart(year, activeMonth);
@@ -701,6 +703,46 @@ export default function LedgerPage({
     const todayStr = format(new Date(), "yyyy-MM-dd");
     setAddRow(emptyRow(todayStr >= ms && todayStr < me ? todayStr : ms));
     load();
+  }
+
+  /** À l'AJOUT d'une opération, fait varier le solde réel automatiquement :
+   *  une sortie le baisse, une entrée le monte. Uniquement pour une opération
+   *  datée dans la fenêtre [date du solde réel ; aujourd'hui] : une opération
+   *  antérieure au solde réel est déjà comprise dedans (double comptage évité),
+   *  une opération « à venir » n'est pas encore débitée. On AVANCE la date
+   *  d'ancrage à celle de l'opération pour que le REPORT reste inchangé :
+   *  l'opération entre alors dans Σ(≤ date), ce qui annule son effet sur le
+   *  report. Comme on ne traite QUE l'opération qu'on vient de créer, le garde
+   *  « créée après la dernière saisie du solde réel » est automatiquement
+   *  satisfait. Volontairement PAS appelée à la suppression / l'édition. */
+  async function applyAddToRealBalance(
+    date: string,
+    type: "income" | "expense",
+    amount: number
+  ) {
+    if (!targetProfile) return;
+    const current = targetProfile.real_balance;
+    const anchoredAt = targetProfile.real_balance_at;
+    if (current == null || !anchoredAt) return; // pas de solde réel → rien
+    if (date < anchoredAt) return; // déjà comprise dans le solde réel → rien
+    if (date > today) return; // à venir, pas encore débitée → rien
+    const delta = type === "income" ? amount : -amount;
+    const newAmount = Math.round((Number(current) + delta) * 100) / 100;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ real_balance: newAmount, real_balance_at: date })
+      .eq("id", targetProfile.id);
+    if (error) {
+      toast.error("Solde réel non mis à jour automatiquement");
+      return;
+    }
+    const updated = {
+      ...targetProfile,
+      real_balance: newAmount,
+      real_balance_at: date,
+    };
+    if (profile && targetProfile.id === profile.id) setProfile(updated);
+    else if (partner && targetProfile.id === partner.id) setPartner(updated);
   }
 
   /** Crée une écriture d'ajustement pointée pour amener le solde pointé
