@@ -723,9 +723,11 @@ export default function LedgerPage({
     if (!targetProfile) return;
     const current = targetProfile.real_balance;
     const anchoredAt = targetProfile.real_balance_at;
-    if (current == null || !anchoredAt) return; // pas de solde réel → rien
-    if (date < anchoredAt) return; // déjà comprise dans le solde réel → rien
+    if (current == null) return; // pas de solde réel → rien
     if (date > today) return; // à venir, pas encore débitée → rien
+    // Antérieure (strictement) à la date du solde réel → déjà comprise dedans.
+    // Une date d'ancrage absente (cas ancien) ne bloque pas l'ajustement.
+    if (anchoredAt && date < anchoredAt) return;
     const delta = type === "income" ? amount : -amount;
     const newAmount = Math.round((Number(current) + delta) * 100) / 100;
     const { error } = await supabase
