@@ -27,6 +27,7 @@ import { useAppStore } from "@/lib/store";
 import {
   formatCurrency,
   formatMonth,
+  formatShortDate,
   getMonthRange,
   lineAppliesToMonth,
   monthlyEquivalent,
@@ -179,8 +180,12 @@ function DashboardContent() {
     .filter((tx) => tx.user_id === me)
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
   const myCount = transactions.filter((tx) => tx.user_id === me).length;
-  const net = income ? Number(income.net_transferred) : 0;
-  const balance = net - mySpend;
+  // Solde réel du compte : valeur saisie manuellement (cf. écran Compte), source
+  // unique partagée avec le Compte. Pas un calcul virés − dépenses (faussé car
+  // toutes les sorties ne sont pas saisies).
+  const realBalance =
+    profile?.real_balance != null ? Number(profile.real_balance) : null;
+  const realBalanceAt = profile?.real_balance_at ?? null;
   // Vue personnelle : MES abonnements (chacun saisit sa propre part d'un
   // abonnement commun, donc ma part = ma propre entrée).
   const mySubs = subscriptions.filter((sub) => sub.user_id === me);
@@ -283,14 +288,18 @@ function DashboardContent() {
         />
         <KpiCard
           label="Solde restant"
-          value={formatCurrency(balance)}
+          value={realBalance != null ? formatCurrency(realBalance) : "—"}
           sub={
-            income
-              ? `sur ${formatCurrency(net)} virés`
-              : "Aucun revenu renseigné"
+            realBalance != null
+              ? realBalanceAt
+                ? `au ${formatShortDate(realBalanceAt)}`
+                : "Solde réel du compte"
+              : "À renseigner dans Compte"
           }
           icon={Wallet}
-          tone={balance >= 0 ? "emerald" : "rose"}
+          tone={
+            realBalance == null ? "indigo" : realBalance >= 0 ? "emerald" : "rose"
+          }
         />
         <KpiCard
           label="Mes dépenses"

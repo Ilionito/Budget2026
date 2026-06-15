@@ -7,6 +7,10 @@ export interface Profile {
   display_name: string;
   avatar_color: string;
   theme?: Record<string, string> | null;
+  /** Solde réel du compte, saisi manuellement (compte bancaire non synchronisé). */
+  real_balance?: number | null;
+  /** Date « au … » à laquelle le solde réel est valable (yyyy-MM-dd). */
+  real_balance_at?: string | null;
 }
 
 export interface Category {

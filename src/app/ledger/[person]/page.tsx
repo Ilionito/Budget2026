@@ -164,6 +164,8 @@ export default function LedgerPage({
     setCategories,
     dataVersion,
     bumpDataVersion,
+    setProfile,
+    setPartner,
   } = useAppStore();
   const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
@@ -190,6 +192,10 @@ export default function LedgerPage({
   /** Dialog « Définir le solde pointé ». */
   const [checkedDialogOpen, setCheckedDialogOpen] = useState(false);
   const [checkedTarget, setCheckedTarget] = useState("");
+  /** Dialog « Définir le solde réel ». */
+  const [realDialogOpen, setRealDialogOpen] = useState(false);
+  const [realTarget, setRealTarget] = useState("");
+  const [savingReal, setSavingReal] = useState(false);
 
   const targetEmail = SLUG_TO_EMAIL[person] ?? null;
   const targetProfile = useMemo(
@@ -696,6 +702,39 @@ export default function LedgerPage({
     toast.success("Solde pointé mis à jour");
     setCheckedDialogOpen(false);
     load();
+  }
+
+  /** Enregistre le solde réel du compte (saisie manuelle) sur le profil.
+   *  Source unique partagée avec la carte « Solde restant » du Dashboard. */
+  async function handleSetRealBalance() {
+    if (!targetProfile) return;
+    const target = Number.parseFloat(realTarget.replace(",", "."));
+    if (!Number.isFinite(target)) {
+      toast.error("Montant invalide");
+      return;
+    }
+    const value = Math.round(target * 100) / 100;
+    const at = format(new Date(), "yyyy-MM-dd");
+    setSavingReal(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ real_balance: value, real_balance_at: at })
+      .eq("id", targetProfile.id);
+    setSavingReal(false);
+    if (error) {
+      toast.error(`Impossible d'enregistrer le solde réel : ${error.message}`);
+      return;
+    }
+    // Répercute aussitôt dans le store → Dashboard « Solde restant » + cette carte.
+    const updated = {
+      ...targetProfile,
+      real_balance: value,
+      real_balance_at: at,
+    };
+    if (profile && targetProfile.id === profile.id) setProfile(updated);
+    else if (partner && targetProfile.id === partner.id) setPartner(updated);
+    setRealDialogOpen(false);
+    toast.success("Solde réel mis à jour");
   }
 
   async function handleToggleChecked(id: string, current: boolean) {
@@ -1295,6 +1334,62 @@ export default function LedgerPage({
         </div>
       </div>
 
+      {/* Solde réel — saisie manuelle, source unique partagée avec le
+          « Solde restant » du Dashboard. */}
+      <Card className="flex items-center justify-between gap-4 p-4">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+            Solde réel
+          </p>
+          <p
+            className={cn(
+              "mt-1 text-2xl font-bold tabular-nums",
+              targetProfile.real_balance == null
+                ? "text-zinc-400"
+                : Number(targetProfile.real_balance) < 0
+                  ? "text-rose-400"
+                  : "text-emerald-400"
+            )}
+          >
+            {targetProfile.real_balance != null
+              ? `${Number(targetProfile.real_balance) < 0 ? "−" : ""}${fmtAmt(
+                  Number(targetProfile.real_balance)
+                )}`
+              : "—"}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-600">
+            {targetProfile.real_balance_at
+              ? `au ${format(
+                  new Date(targetProfile.real_balance_at + "T12:00:00"),
+                  "dd/MM/yyyy"
+                )}`
+              : isOwner
+                ? "À renseigner — clique sur le crayon"
+                : "Non renseigné"}
+          </p>
+        </div>
+        {isOwner && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-9 shrink-0 text-zinc-500 hover:text-indigo-400"
+            onClick={() => {
+              setRealTarget(
+                targetProfile.real_balance != null
+                  ? Number(targetProfile.real_balance)
+                      .toFixed(2)
+                      .replace(".", ",")
+                  : ""
+              );
+              setRealDialogOpen(true);
+            }}
+            aria-label="Définir le solde réel"
+          >
+            <Pencil className="size-4" />
+          </Button>
+        )}
+      </Card>
+
       {/* Month navigation tabs */}
       <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-1">
         {MONTHS_SHORT.map((m, i) => (
@@ -1723,6 +1818,49 @@ export default function LedgerPage({
             className="w-full"
           >
             <Check />
+            Valider
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog « Définir le solde réel » */}
+      <Dialog open={realDialogOpen} onOpenChange={setRealDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Définir le solde réel</DialogTitle>
+            <DialogDescription>
+              Le vrai solde de ce compte (relevé bancaire). Cette valeur
+              s&apos;affiche telle quelle ici et dans «&nbsp;Solde restant&nbsp;»
+              du Dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <Label htmlFor="real-target">Solde réel (€)</Label>
+            <Input
+              id="real-target"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={realTarget}
+              onChange={(e) => setRealTarget(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSetRealBalance();
+              }}
+              className="h-12 text-center text-xl font-semibold tabular-nums"
+              autoFocus
+            />
+            <p className="text-xs text-zinc-600">
+              Daté d&apos;aujourd&apos;hui. Modifiable à tout moment.
+            </p>
+          </div>
+          <Button
+            onClick={handleSetRealBalance}
+            disabled={
+              savingReal ||
+              !Number.isFinite(Number.parseFloat(realTarget.replace(",", ".")))
+            }
+            className="w-full"
+          >
+            {savingReal ? <Loader2 className="animate-spin" /> : <Check />}
             Valider
           </Button>
         </DialogContent>
