@@ -369,7 +369,7 @@ function DashboardContent() {
             </ResponsiveContainer>
           </div>
         </Card>
-        <CategoryBreakdown transactions={relevant} plannedByCategory={plannedByCategory} />
+        <CategoryBreakdown transactions={relevant} plannedByCategory={plannedByCategory} manageable />
         </div>
 
         {/* Rail droit : revenus, répartition, dernières transactions */}
@@ -392,7 +392,7 @@ function DashboardContent() {
                       nameKey="name"
                       innerRadius={50}
                       outerRadius={72}
-                      paddingAngle={3}
+                      paddingAngle={0}
                       strokeWidth={0}
                     >
                       {pieData.map((entry) => (

@@ -391,7 +391,7 @@ function DashboardCommunContent() {
                       nameKey="name"
                       innerRadius={50}
                       outerRadius={72}
-                      paddingAngle={3}
+                      paddingAngle={0}
                       strokeWidth={0}
                     >
                       {pieData.map((entry) => (

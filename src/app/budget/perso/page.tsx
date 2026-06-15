@@ -195,6 +195,21 @@ function PersonalBudgetContent() {
     [lines, categoriesById]
   );
 
+  /**
+   * Lignes affichées : on masque une catégorie complètement vide
+   * (prévu = 0 ET dépensé = 0). Une catégorie avec un prévu > 0 mais rien
+   * dépensé reste visible, pour pouvoir continuer à planifier.
+   */
+  const visibleLines = useMemo(
+    () =>
+      sortedLines.filter((line) => {
+        const target = Number(line.amount_target);
+        const spent = spentByCategory.get(line.category_id) ?? 0;
+        return target > 0.005 || Math.abs(spent) > 0.005;
+      }),
+    [sortedLines, spentByCategory]
+  );
+
   const trackedCategoryIds = useMemo(
     () => new Set(lines.map((l) => l.category_id)),
     [lines]
@@ -431,7 +446,7 @@ function PersonalBudgetContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/40">
-              {sortedLines.length === 0 && (
+              {visibleLines.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-10 text-center">
                     <p className="text-sm font-medium text-zinc-400">
@@ -444,7 +459,7 @@ function PersonalBudgetContent() {
                   </td>
                 </tr>
               )}
-              {sortedLines.map((line) => {
+              {visibleLines.map((line) => {
                 const category = categoriesById.get(line.category_id) ?? null;
                 const real = spentByCategory.get(line.category_id) ?? 0;
                 const target = Number(line.amount_target);
@@ -595,7 +610,7 @@ function PersonalBudgetContent() {
                 </td>
               </tr>
             </tbody>
-            {sortedLines.length > 0 && (
+            {visibleLines.length > 0 && (
               <tfoot className="border-t border-zinc-800/60 bg-zinc-900/60">
                 <tr>
                   <td className="px-4 py-2 text-sm font-semibold text-zinc-300">
