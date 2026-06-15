@@ -27,7 +27,6 @@ import { useAppStore } from "@/lib/store";
 import {
   formatCurrency,
   formatMonth,
-  formatShortDate,
   getMonthRange,
   lineAppliesToMonth,
   monthlyEquivalent,
@@ -36,6 +35,7 @@ import {
 import type {
   BudgetLine,
   BudgetLineOverride,
+  LedgerEntry,
   MonthlyIncome,
   Subscription,
   Transaction,
@@ -53,6 +53,9 @@ function DashboardContent() {
   // dépense purement perso (du partenaire) à exclure du dashboard.
   const [lines, setLines] = useState<BudgetLine[]>([]);
   const [overrides, setOverrides] = useState<BudgetLineOverride[]>([]);
+  // Écritures du Compte (registre) de l'utilisateur : pour le « Solde restant »
+  // = solde courant du compte = somme des opérations jusqu'à aujourd'hui.
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const loadIdRef = useRef(0);
 
@@ -65,7 +68,7 @@ function DashboardContent() {
       const { start, end } = getMonthRange(currentMonth);
       const m = currentMonth.getMonth() + 1;
       const y = currentMonth.getFullYear();
-      const [txRes, incomeRes, subsRes, linesRes, overridesRes] =
+      const [txRes, incomeRes, subsRes, linesRes, overridesRes, ledgerRes] =
         await Promise.all([
           supabase
             .from("transactions")
@@ -90,6 +93,7 @@ function DashboardContent() {
             .select("*")
             .eq("month", m)
             .eq("year", y),
+          supabase.from("ledger_entries").select("*").eq("user_id", userId),
         ]);
       // Ignore le résultat si une requête plus récente a été lancée entre-temps.
       if (id !== loadIdRef.current) return;
@@ -98,6 +102,7 @@ function DashboardContent() {
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
       setLines((linesRes.data as BudgetLine[] | null) ?? []);
       setOverrides((overridesRes.data as BudgetLineOverride[] | null) ?? []);
+      setLedgerEntries((ledgerRes.data as LedgerEntry[] | null) ?? []);
       setLoading(false);
     },
     [ready, profile, currentMonth]
@@ -180,12 +185,19 @@ function DashboardContent() {
     .filter((tx) => tx.user_id === me)
     .reduce((sum, tx) => sum + Number(tx.amount), 0);
   const myCount = transactions.filter((tx) => tx.user_id === me).length;
-  // Solde réel du compte : valeur saisie manuellement (cf. écran Compte), source
-  // unique partagée avec le Compte. Pas un calcul virés − dépenses (faussé car
-  // toutes les sorties ne sont pas saisies).
-  const realBalance =
-    profile?.real_balance != null ? Number(profile.real_balance) : null;
-  const realBalanceAt = profile?.real_balance_at ?? null;
+  // Solde restant = solde courant du Compte (registre) : somme des opérations
+  // jusqu'à aujourd'hui (on exclut les opés « à venir »). Même valeur que le
+  // « Solde actuel » de l'écran Compte. Non éditable.
+  const hasLedger = ledgerEntries.length > 0;
+  const soldeActuel = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return ledgerEntries
+      .filter((e) => e.date <= today)
+      .reduce(
+        (s, e) => s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
+        0
+      );
+  }, [ledgerEntries]);
   // Vue personnelle : MES abonnements (chacun saisit sa propre part d'un
   // abonnement commun, donc ma part = ma propre entrée).
   const mySubs = subscriptions.filter((sub) => sub.user_id === me);
@@ -288,17 +300,11 @@ function DashboardContent() {
         />
         <KpiCard
           label="Solde restant"
-          value={realBalance != null ? formatCurrency(realBalance) : "—"}
-          sub={
-            realBalance != null
-              ? realBalanceAt
-                ? `au ${formatShortDate(realBalanceAt)}`
-                : "Solde réel du compte"
-              : "À renseigner dans Compte"
-          }
+          value={hasLedger ? formatCurrency(soldeActuel) : "—"}
+          sub={hasLedger ? "Sur ton compte aujourd'hui" : "Aucune opération au Compte"}
           icon={Wallet}
           tone={
-            realBalance == null ? "indigo" : realBalance >= 0 ? "emerald" : "rose"
+            !hasLedger ? "indigo" : soldeActuel >= 0 ? "emerald" : "rose"
           }
         />
         <KpiCard

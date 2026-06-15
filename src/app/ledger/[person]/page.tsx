@@ -41,7 +41,6 @@ import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
 import { materializeSubscriptions } from "@/lib/subscriptions";
 import { ensurePersonalBudgetLine } from "@/lib/budget";
-import { realBalanceAfterAdd } from "@/lib/realBalance";
 import { useAppStore } from "@/lib/store";
 import { cn, normalizeLabel } from "@/lib/utils";
 import type { Category, LedgerEntry } from "@/types";
@@ -165,8 +164,6 @@ export default function LedgerPage({
     setCategories,
     dataVersion,
     bumpDataVersion,
-    setProfile,
-    setPartner,
   } = useAppStore();
   const today = useMemo(() => format(new Date(), "yyyy-MM-dd"), []);
 
@@ -193,10 +190,6 @@ export default function LedgerPage({
   /** Dialog « Définir le solde pointé ». */
   const [checkedDialogOpen, setCheckedDialogOpen] = useState(false);
   const [checkedTarget, setCheckedTarget] = useState("");
-  /** Dialog « Définir le solde réel ». */
-  const [realDialogOpen, setRealDialogOpen] = useState(false);
-  const [realTarget, setRealTarget] = useState("");
-  const [savingReal, setSavingReal] = useState(false);
 
   const targetEmail = SLUG_TO_EMAIL[person] ?? null;
   const targetProfile = useMemo(
@@ -275,44 +268,10 @@ export default function LedgerPage({
   const monthStartStr = useMemo(() => mStart(year, activeMonth), [year, activeMonth]);
   const monthEndStr = useMemo(() => mEnd(year, activeMonth), [year, activeMonth]);
 
-  // ── Solde réel daté = point d'ancrage du solde ─────────────────────────────
-  // Quand un solde réel daté existe (carte « Solde réel »), le solde calculé est
-  // recalé pour retomber EXACTEMENT sur cette valeur à sa date, au lieu de
-  // chaîner une clôture calculée qui dérive de mois en mois. On applique un
-  // décalage constant K = soldeRéel − (cumul BRUT jusqu'à la date d'ancrage),
-  // à partir du mois qui contient l'ancre (et les mois suivants). Le cumul
-  // compte toutes les opérations dont la date ≤ ancre (pointées ou non).
-  const anchorDate = targetProfile?.real_balance_at ?? null;
-  const anchorAmount =
-    targetProfile?.real_balance != null
-      ? Number(targetProfile.real_balance)
-      : null;
-  const hasAnchor = anchorDate != null && anchorAmount != null;
-
-  const anchorOffset = useMemo(() => {
-    if (!hasAnchor || anchorDate == null || anchorAmount == null) return 0;
-    const soldeAtAnchor = entries
-      .filter((e) => e.date <= anchorDate)
-      .reduce(
-        (s, e) =>
-          s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
-        0
-      );
-    return anchorAmount - soldeAtAnchor;
-  }, [hasAnchor, anchorDate, anchorAmount, entries]);
-
-  /** Décalage d'ancrage pour un solde arrêté à `cutoffExclusive` (1er jour du
-   *  mois suivant) : actif dès que l'ancre est antérieure à cette borne, donc à
-   *  partir du mois qui contient l'ancre. Avant l'ancre → 0 (comportement
-   *  inchangé). */
-  const anchorAdjustment = useCallback(
-    (cutoffExclusive: string) =>
-      hasAnchor && anchorDate != null && anchorDate < cutoffExclusive
-        ? anchorOffset
-        : 0,
-    [hasAnchor, anchorDate, anchorOffset]
-  );
-
+  // Report = solde d'ouverture du mois = somme de toutes les opérations
+  // antérieures au mois. Le solde courant n'est PAS modifiable : c'est la somme
+  // des opérations (les corrections se font via une écriture « Ajustement de
+  // solde »).
   const carryForward = useMemo(
     () =>
       entries
@@ -321,8 +280,8 @@ export default function LedgerPage({
           (s, e) =>
             s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
           0
-        ) + anchorAdjustment(monthEndStr),
-    [entries, monthStartStr, monthEndStr, anchorAdjustment]
+        ),
+    [entries, monthStartStr]
   );
 
   const hasPreviousEntries = useMemo(
@@ -382,15 +341,13 @@ export default function LedgerPage({
         const expense = mEntries
           .filter((e) => e.type === "expense")
           .reduce((s, e) => s + Number(e.amount), 0);
-        const balanceAtEnd =
-          entries
-            .filter((e) => e.date < me)
-            .reduce(
-              (s, e) =>
-                s +
-                (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
-              0
-            ) + anchorAdjustment(me);
+        const balanceAtEnd = entries
+          .filter((e) => e.date < me)
+          .reduce(
+            (s, e) =>
+              s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
+            0
+          );
         return {
           monthIndex: m,
           income,
@@ -402,7 +359,7 @@ export default function LedgerPage({
           isCurrentMonth: ms <= today && today < me,
         };
       }),
-    [entries, year, today, anchorAdjustment]
+    [entries, year, today]
   );
 
   const yearIncome = useMemo(
@@ -422,11 +379,8 @@ export default function LedgerPage({
         .reduce(
           (s, e) => s + (e.type === "income" ? Number(e.amount) : -Number(e.amount)),
           0
-        ) +
-      anchorAdjustment(
-        mEnd(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1)
-      ),
-    [entries, today, anchorAdjustment]
+        ),
+    [entries, today]
   );
 
   const chartData = useMemo(
@@ -695,8 +649,6 @@ export default function LedgerPage({
     if (wantsBudget && parsed.type === "expense") {
       await ensurePersonalBudgetLine(targetProfile.id, addRow.categoryId, label);
     }
-    // Le solde réel baisse (sortie) / monte (entrée) automatiquement à l'ajout.
-    await applyAddToRealBalance(addRow.date, parsed.type, amount);
     setSaving(false);
     if (wantsBudget) bumpDataVersion();
     const ms = mStart(year, activeMonth);
@@ -704,46 +656,6 @@ export default function LedgerPage({
     const todayStr = format(new Date(), "yyyy-MM-dd");
     setAddRow(emptyRow(todayStr >= ms && todayStr < me ? todayStr : ms));
     load();
-  }
-
-  /** À l'AJOUT d'une opération, fait varier le solde réel automatiquement :
-   *  une sortie le baisse, une entrée le monte. Uniquement pour une opération
-   *  datée dans la fenêtre [date du solde réel ; aujourd'hui] : une opération
-   *  antérieure au solde réel est déjà comprise dedans (double comptage évité),
-   *  une opération « à venir » n'est pas encore débitée. On AVANCE la date
-   *  d'ancrage à celle de l'opération pour que le REPORT reste inchangé :
-   *  l'opération entre alors dans Σ(≤ date), ce qui annule son effet sur le
-   *  report. Comme on ne traite QUE l'opération qu'on vient de créer, le garde
-   *  « créée après la dernière saisie du solde réel » est automatiquement
-   *  satisfait. Volontairement PAS appelée à la suppression / l'édition. */
-  async function applyAddToRealBalance(
-    date: string,
-    type: "income" | "expense",
-    amount: number
-  ) {
-    if (!targetProfile) return;
-    const next = realBalanceAfterAdd(
-      targetProfile.real_balance,
-      targetProfile.real_balance_at,
-      { date, type, amount },
-      today
-    );
-    if (!next) return; // hors fenêtre (déjà comprise / à venir) → rien
-    const { error } = await supabase
-      .from("profiles")
-      .update({ real_balance: next.amount, real_balance_at: next.date })
-      .eq("id", targetProfile.id);
-    if (error) {
-      toast.error("Solde réel non mis à jour automatiquement");
-      return;
-    }
-    const updated = {
-      ...targetProfile,
-      real_balance: next.amount,
-      real_balance_at: next.date,
-    };
-    if (profile && targetProfile.id === profile.id) setProfile(updated);
-    else if (partner && targetProfile.id === partner.id) setPartner(updated);
   }
 
   /** Crée une écriture d'ajustement pointée pour amener le solde pointé
@@ -792,39 +704,6 @@ export default function LedgerPage({
     toast.success("Solde pointé mis à jour");
     setCheckedDialogOpen(false);
     load();
-  }
-
-  /** Enregistre le solde réel du compte (saisie manuelle) sur le profil.
-   *  Source unique partagée avec la carte « Solde restant » du Dashboard. */
-  async function handleSetRealBalance() {
-    if (!targetProfile) return;
-    const target = Number.parseFloat(realTarget.replace(",", "."));
-    if (!Number.isFinite(target)) {
-      toast.error("Montant invalide");
-      return;
-    }
-    const value = Math.round(target * 100) / 100;
-    const at = format(new Date(), "yyyy-MM-dd");
-    setSavingReal(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ real_balance: value, real_balance_at: at })
-      .eq("id", targetProfile.id);
-    setSavingReal(false);
-    if (error) {
-      toast.error(`Impossible d'enregistrer le solde réel : ${error.message}`);
-      return;
-    }
-    // Répercute aussitôt dans le store → Dashboard « Solde restant » + cette carte.
-    const updated = {
-      ...targetProfile,
-      real_balance: value,
-      real_balance_at: at,
-    };
-    if (profile && targetProfile.id === profile.id) setProfile(updated);
-    else if (partner && targetProfile.id === partner.id) setPartner(updated);
-    setRealDialogOpen(false);
-    toast.success("Solde réel mis à jour");
   }
 
   async function handleToggleChecked(id: string, current: boolean) {
@@ -1424,60 +1303,27 @@ export default function LedgerPage({
         </div>
       </div>
 
-      {/* Solde réel — saisie manuelle, source unique partagée avec le
-          « Solde restant » du Dashboard. */}
+      {/* Solde actuel = solde après ta dernière opération du jour (≤ aujourd'hui).
+          NON modifiable : c'est la somme de tes opérations. Pour corriger, on
+          ajoute une écriture « Ajustement de solde ». */}
       <Card className="flex items-center justify-between gap-4 p-4">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Solde réel
+            Solde actuel
           </p>
           <p
             className={cn(
               "mt-1 text-2xl font-bold tabular-nums",
-              targetProfile.real_balance == null
-                ? "text-zinc-400"
-                : Number(targetProfile.real_balance) < 0
-                  ? "text-rose-400"
-                  : "text-emerald-400"
+              currentBalance < 0 ? "text-rose-400" : "text-emerald-400"
             )}
           >
-            {targetProfile.real_balance != null
-              ? `${Number(targetProfile.real_balance) < 0 ? "−" : ""}${fmtAmt(
-                  Number(targetProfile.real_balance)
-                )}`
-              : "—"}
+            {currentBalance < 0 ? "−" : ""}
+            {fmtAmt(currentBalance)}
           </p>
           <p className="mt-0.5 text-xs text-zinc-600">
-            {targetProfile.real_balance_at
-              ? `au ${format(
-                  new Date(targetProfile.real_balance_at + "T12:00:00"),
-                  "dd/MM/yyyy"
-                )}`
-              : isOwner
-                ? "À renseigner — clique sur le crayon"
-                : "Non renseigné"}
+            Sur ton compte aujourd&apos;hui (après ta dernière opération)
           </p>
         </div>
-        {isOwner && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9 shrink-0 text-zinc-500 hover:text-indigo-400"
-            onClick={() => {
-              setRealTarget(
-                targetProfile.real_balance != null
-                  ? Number(targetProfile.real_balance)
-                      .toFixed(2)
-                      .replace(".", ",")
-                  : ""
-              );
-              setRealDialogOpen(true);
-            }}
-            aria-label="Définir le solde réel"
-          >
-            <Pencil className="size-4" />
-          </Button>
-        )}
       </Card>
 
       {/* Month navigation tabs */}
@@ -1767,7 +1613,7 @@ export default function LedgerPage({
               </thead>
               <tbody className="divide-y divide-zinc-800/30">
                 {/* Carry-forward row */}
-                {(hasPreviousEntries || Math.abs(carryForward) > 0.005) && (
+                {hasPreviousEntries && (
                   <tr className="bg-zinc-800/20">
                     <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-zinc-600">
                       01/
@@ -1908,49 +1754,6 @@ export default function LedgerPage({
             className="w-full"
           >
             <Check />
-            Valider
-          </Button>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog « Définir le solde réel » */}
-      <Dialog open={realDialogOpen} onOpenChange={setRealDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Définir le solde réel</DialogTitle>
-            <DialogDescription>
-              Le vrai solde de ce compte (relevé bancaire). Cette valeur
-              s&apos;affiche telle quelle ici et dans «&nbsp;Solde restant&nbsp;»
-              du Dashboard.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-1.5">
-            <Label htmlFor="real-target">Solde réel (€)</Label>
-            <Input
-              id="real-target"
-              inputMode="decimal"
-              placeholder="0,00"
-              value={realTarget}
-              onChange={(e) => setRealTarget(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSetRealBalance();
-              }}
-              className="h-12 text-center text-xl font-semibold tabular-nums"
-              autoFocus
-            />
-            <p className="text-xs text-zinc-600">
-              Daté d&apos;aujourd&apos;hui. Modifiable à tout moment.
-            </p>
-          </div>
-          <Button
-            onClick={handleSetRealBalance}
-            disabled={
-              savingReal ||
-              !Number.isFinite(Number.parseFloat(realTarget.replace(",", ".")))
-            }
-            className="w-full"
-          >
-            {savingReal ? <Loader2 className="animate-spin" /> : <Check />}
             Valider
           </Button>
         </DialogContent>
