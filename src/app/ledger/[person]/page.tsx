@@ -41,6 +41,7 @@ import { UserAvatar } from "@/components/shared/UserAvatar";
 import { supabase, ALLOWED_EMAILS } from "@/lib/supabase";
 import { materializeSubscriptions } from "@/lib/subscriptions";
 import { ensurePersonalBudgetLine } from "@/lib/budget";
+import { realBalanceAfterAdd } from "@/lib/realBalance";
 import { useAppStore } from "@/lib/store";
 import { cn, normalizeLabel } from "@/lib/utils";
 import type { Category, LedgerEntry } from "@/types";
@@ -721,18 +722,16 @@ export default function LedgerPage({
     amount: number
   ) {
     if (!targetProfile) return;
-    const current = targetProfile.real_balance;
-    const anchoredAt = targetProfile.real_balance_at;
-    if (current == null) return; // pas de solde réel → rien
-    if (date > today) return; // à venir, pas encore débitée → rien
-    // Antérieure (strictement) à la date du solde réel → déjà comprise dedans.
-    // Une date d'ancrage absente (cas ancien) ne bloque pas l'ajustement.
-    if (anchoredAt && date < anchoredAt) return;
-    const delta = type === "income" ? amount : -amount;
-    const newAmount = Math.round((Number(current) + delta) * 100) / 100;
+    const next = realBalanceAfterAdd(
+      targetProfile.real_balance,
+      targetProfile.real_balance_at,
+      { date, type, amount },
+      today
+    );
+    if (!next) return; // hors fenêtre (déjà comprise / à venir) → rien
     const { error } = await supabase
       .from("profiles")
-      .update({ real_balance: newAmount, real_balance_at: date })
+      .update({ real_balance: next.amount, real_balance_at: next.date })
       .eq("id", targetProfile.id);
     if (error) {
       toast.error("Solde réel non mis à jour automatiquement");
@@ -740,8 +739,8 @@ export default function LedgerPage({
     }
     const updated = {
       ...targetProfile,
-      real_balance: newAmount,
-      real_balance_at: date,
+      real_balance: next.amount,
+      real_balance_at: next.date,
     };
     if (profile && targetProfile.id === profile.id) setProfile(updated);
     else if (partner && targetProfile.id === partner.id) setPartner(updated);
