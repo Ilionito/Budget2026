@@ -110,7 +110,8 @@ CREATE TABLE public.ledger_entries (
   created_at timestamp with time zone DEFAULT now(),
   category_id uuid,
   transaction_id uuid,
-  subscription_id uuid
+  subscription_id uuid,
+  monthly_income_id uuid
 );
 
 CREATE TABLE public.monthly_income (
@@ -118,7 +119,8 @@ CREATE TABLE public.monthly_income (
   user_id uuid NOT NULL,
   month integer NOT NULL,
   year integer NOT NULL,
-  gross_amount numeric(10,2) NOT NULL DEFAULT 0,
+  date date,
+  gross_amount numeric(10,2) DEFAULT 0,
   net_transferred numeric(10,2) NOT NULL DEFAULT 0,
   note text,
   created_at timestamp with time zone DEFAULT now()
@@ -196,13 +198,13 @@ ALTER TABLE categories ADD CONSTRAINT categories_pkey PRIMARY KEY (id);
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_category_id_fkey FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_pkey PRIMARY KEY (id);
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL;
+ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_monthly_income_id_fkey FOREIGN KEY (monthly_income_id) REFERENCES monthly_income(id) ON DELETE CASCADE;
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE SET NULL;
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_type_check CHECK ((type = ANY (ARRAY['income'::text, 'expense'::text])));
 ALTER TABLE ledger_entries ADD CONSTRAINT ledger_entries_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
 
 ALTER TABLE monthly_income ADD CONSTRAINT monthly_income_pkey PRIMARY KEY (id);
 ALTER TABLE monthly_income ADD CONSTRAINT monthly_income_user_id_fkey FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
-ALTER TABLE monthly_income ADD CONSTRAINT monthly_income_user_id_month_year_key UNIQUE (user_id, month, year);
 
 ALTER TABLE personal_budget_lines ADD CONSTRAINT personal_budget_lines_category_id_fkey FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE;
 ALTER TABLE personal_budget_lines ADD CONSTRAINT personal_budget_lines_pkey PRIMARY KEY (id);

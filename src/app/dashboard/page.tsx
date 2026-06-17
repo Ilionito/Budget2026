@@ -46,7 +46,7 @@ function DashboardContent() {
   const { profile, categories, currentMonth, dataVersion, ready, bumpDataVersion } =
     useAppStore();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [income, setIncome] = useState<MonthlyIncome | null>(null);
+  const [incomes, setIncomes] = useState<MonthlyIncome[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   // Lignes du budget (commun + perso de l'utilisateur) + ajustements du mois,
   // pour calculer le budget prévu et distinguer une dépense partagée d'une
@@ -82,7 +82,7 @@ function DashboardContent() {
             .eq("user_id", userId)
             .eq("month", m)
             .eq("year", y)
-            .maybeSingle(),
+            .order("created_at", { ascending: true }),
           supabase.from("subscriptions").select("*").eq("is_active", true),
           supabase
             .from("budget_lines")
@@ -98,7 +98,7 @@ function DashboardContent() {
       // Ignore le résultat si une requête plus récente a été lancée entre-temps.
       if (id !== loadIdRef.current) return;
       setTransactions((txRes.data as Transaction[] | null) ?? []);
-      setIncome((incomeRes.data as MonthlyIncome | null) ?? null);
+      setIncomes((incomeRes.data as MonthlyIncome[] | null) ?? []);
       setSubscriptions((subsRes.data as Subscription[] | null) ?? []);
       setLines((linesRes.data as BudgetLine[] | null) ?? []);
       setOverrides((overridesRes.data as BudgetLineOverride[] | null) ?? []);
@@ -389,7 +389,7 @@ function DashboardContent() {
 
         {/* Rail droit : revenus, répartition, dernières transactions */}
         <div className="space-y-4">
-        <IncomeWidget income={income} onChanged={bumpDataVersion} />
+        <IncomeWidget incomes={incomes} onChanged={bumpDataVersion} />
         <Card>
           <CardTitle>Répartition</CardTitle>
           {pieData.length === 0 ? (

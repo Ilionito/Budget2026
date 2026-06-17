@@ -689,6 +689,36 @@ export function BudgetContent({
     [transactions]
   );
 
+  // Catégories du budget commun (celles qui ont une ligne sans propriétaire).
+  const commonCategoryIds = useMemo(
+    () => new Set(lines.map((l) => l.category_id).filter(Boolean)),
+    [lines]
+  );
+
+  // Dépense COMMUNE d'une personne : ses transactions du mois dans une catégorie
+  // commune (peu importe le libellé), comme le Dashboard commun. Exclut le perso.
+  const personCommonSpend = useCallback(
+    (personId: string) =>
+      transactions
+        .filter(
+          (tx) =>
+            tx.user_id === personId &&
+            tx.category_id &&
+            commonCategoryIds.has(tx.category_id)
+        )
+        .reduce((sum, tx) => sum + Number(tx.amount), 0),
+    [transactions, commonCategoryIds]
+  );
+
+  // Dépense commune totale (les deux), pour la carte « Dépensé / budget ».
+  const commonSpendTotal = useMemo(
+    () =>
+      transactions
+        .filter((tx) => tx.category_id && commonCategoryIds.has(tx.category_id))
+        .reduce((sum, tx) => sum + Number(tx.amount), 0),
+    [transactions, commonCategoryIds]
+  );
+
   const totalPlanned = visibleLines.reduce(
     (sum, line) => sum + plannedFor(line),
     0
@@ -698,9 +728,9 @@ export function BudgetContent({
   );
   const gridRealTotal = gridPersonTotals.reduce((a, b) => a + b, 0);
   // Budget perso : seuls les réels du profil ciblé comptent dans l'écart global.
-  const allRealTotal = isPersonal
-    ? gridRealTotal
-    : transactions.reduce((sum, tx) => sum + Number(tx.amount), 0);
+  // Budget commun : on ne compte QUE le commun (catégories communes), jamais le
+  // perso — cohérent avec le Dashboard commun.
+  const allRealTotal = isPersonal ? gridRealTotal : commonSpendTotal;
   const globalGap = totalPlanned - allRealTotal;
   const withinBudget = allRealTotal <= totalPlanned;
 
@@ -952,7 +982,11 @@ export function BudgetContent({
               className="mt-2 text-xl font-semibold tabular-nums"
               style={{ color: resolveColor(person.avatar_color) }}
             >
-              {formatCurrency(personMonthTotal(person.id))}
+              {formatCurrency(
+                isPersonal
+                  ? personMonthTotal(person.id)
+                  : personCommonSpend(person.id)
+              )}
             </p>
           </Card>
         ))}

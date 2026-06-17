@@ -55,6 +55,7 @@ export interface MonthlyIncome {
   user_id: string;
   month: number;
   year: number;
+  date: string | null;
   gross_amount: number;
   net_transferred: number;
   note: string | null;
